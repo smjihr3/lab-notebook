@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { STATUS_LABELS, OUTCOME_LABELS } from './graphUtils'
+import OutcomePopup from './OutcomePopup'
+
+const STATUS_OPTIONS = [
+  { value: 'in_progress',  label: '진행중',     activeCls: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { value: 'data_pending', label: '데이터 대기', activeCls: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
+  { value: 'analyzing',    label: '분석중',     activeCls: 'bg-orange-100 text-orange-700 border-orange-300' },
+  { value: 'completed',    label: '완료',       activeCls: 'bg-green-100 text-green-700 border-green-300' },
+]
 
 function extractText(doc, maxChars = 200) {
   if (!doc || !Array.isArray(doc.content)) return ''
@@ -37,9 +45,10 @@ function LinkedExpList({ ids, allExperiments, onNavigate }) {
   )
 }
 
-export default function GraphSidePanel({ experiment, allExperiments, onClose, onNavigate }) {
+export default function GraphSidePanel({ experiment, allExperiments, onClose, onNavigate, onStatusChange }) {
   const navigate = useNavigate()
   const [mounted, setMounted] = useState(false)
+  const [localOutcomePopup, setLocalOutcomePopup] = useState(false)
 
   useEffect(() => {
     requestAnimationFrame(() => setMounted(true))
@@ -56,6 +65,18 @@ export default function GraphSidePanel({ experiment, allExperiments, onClose, on
 
   return (
     <>
+      {localOutcomePopup && (
+        <OutcomePopup
+          mode="complete"
+          currentOutcome={experiment.outcome}
+          onSelect={(outcome) => {
+            onStatusChange?.(experiment.id, 'completed', outcome)
+            setLocalOutcomePopup(false)
+          }}
+          onCancel={() => setLocalOutcomePopup(false)}
+        />
+      )}
+
       {/* dim overlay */}
       <div className="fixed inset-0 z-30" onClick={onClose} />
 
@@ -90,6 +111,36 @@ export default function GraphSidePanel({ experiment, allExperiments, onClose, on
             {outcomeLabel && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">{outcomeLabel}</span>
             )}
+          </div>
+
+          {/* status 변경 버튼 그룹 */}
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">상태 변경</div>
+            <div className="flex flex-wrap gap-1.5">
+              {STATUS_OPTIONS.map((opt) => {
+                const isActive = experiment.status === opt.value
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      if (isActive) return
+                      if (opt.value === 'completed') {
+                        setLocalOutcomePopup(true)
+                      } else {
+                        onStatusChange?.(experiment.id, opt.value)
+                      }
+                    }}
+                    className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                      isActive
+                        ? opt.activeCls
+                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {/* goal */}

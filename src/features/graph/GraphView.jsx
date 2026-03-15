@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactFlow, {
-  Background, Controls, MiniMap,
+  Background, Controls,
   useNodesState, useEdgesState, addEdge,
   MarkerType,
 } from 'reactflow'
@@ -21,20 +21,23 @@ export default function GraphView() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const [layoutDir, setLayoutDir] = useState('TB')
+  const [layoutDir, setLayoutDir] = useState('LR')
   const [selectedExp, setSelectedExp] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)  // { x, y, experiment }
   const [outcomePopup, setOutcomePopup] = useState(null) // { mode, experiment }
 
   const fullDataRef = useRef({}) // id → full experiment data
-  const layoutDirRef = useRef(layoutDir)
+  const layoutDirRef = useRef('LR')
   useEffect(() => { layoutDirRef.current = layoutDir }, [layoutDir])
 
   // ── 레이아웃 계산 ─────────────────────────────────────────────
   const rebuildLayout = useCallback((fullDataMap, dir) => {
     const fullList = Object.values(fullDataMap)
     if (fullList.length === 0) return
-    const rawNodes = experimentsToNodes(fullList)
+    const rawNodes = experimentsToNodes(fullList).map((n) => ({
+      ...n,
+      data: { ...n.data, layoutDirection: dir },
+    }))
     const rawEdges = experimentsToEdges(fullList)
     const laidOut  = applyDagreLayout(rawNodes, rawEdges, dir)
     setNodes(laidOut)
@@ -142,6 +145,24 @@ export default function GraphView() {
     setOutcomePopup(null)
   }
 
+  // ── Status 변경 ────────────────────────────────────────────────
+  async function handleStatusChange(experimentId, newStatus, outcome) {
+    const full = fullDataRef.current[experimentId] ?? await getExperiment(experimentId)
+    if (!full) return
+    const updated = { ...full, status: newStatus }
+    if (outcome !== undefined) updated.outcome = outcome
+    fullDataRef.current[experimentId] = updated
+    await updateExperiment(updated)
+
+    const newStyle = getNodeStyle(updated)
+    setNodes((nds) => nds.map((n) =>
+      n.id === experimentId
+        ? { ...n, data: { ...n.data, experiment: updated, style: newStyle, statusLabel: newStyle.statusLabel } }
+        : n
+    ))
+    if (selectedExp?.id === experimentId) setSelectedExp(updated)
+  }
+
   // ── 렌더 ──────────────────────────────────────────────────────
   return (
     <div className="w-full h-full relative">
@@ -160,7 +181,6 @@ export default function GraphView() {
       >
         <Background />
         <Controls />
-        <MiniMap nodeColor={(n) => n.data?.style?.bg ?? '#ffffff'} />
       </ReactFlow>
 
       {/* 툴바 */}
@@ -172,7 +192,7 @@ export default function GraphView() {
           onClick={toggleDirection}
           className="text-xs bg-white/90 hover:bg-white border border-gray-200 px-2.5 py-1 rounded-lg shadow text-gray-600 transition-colors"
         >
-          {layoutDir === 'TB' ? 'TB → LR' : 'LR → TB'}
+          {layoutDir === 'LR' ? 'LR → TB' : 'TB → LR'}
         </button>
         <button
           onClick={handleRelayout}
@@ -205,6 +225,7 @@ export default function GraphView() {
             const exp = fullDataRef.current[id] ?? experiments.find((e) => e.id === id)
             if (exp) setSelectedExp(exp)
           }}
+          onStatusChange={handleStatusChange}
         />
       )}
 
