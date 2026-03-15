@@ -9,6 +9,7 @@ import { useDrive } from '../../store/driveStore'
 import { useExperiments } from '../../store/experimentStore'
 import { uploadBinaryFile } from '../../services/drive/driveClient'
 import { fetchByDoi } from '../../services/crossref/index.js'
+import ExperimentPrint from './ExperimentPrint.jsx'
 
 // ── Excel/HTML 표 파싱 헬퍼 ───────────────────────────────────
 
@@ -307,7 +308,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         <button
           type="button"
           onClick={addBlock}
-          className="no-print flex items-center gap-1 text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors"
+          className="flex items-center gap-1 text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -348,7 +349,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                     <button
                       type="button"
                       onClick={() => deleteItem(block.id, item.id)}
-                      className="no-print absolute top-1 right-1 opacity-0 group-hover/item:opacity-100 p-0.5 bg-white/80 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition-all"
+                      className="absolute top-1 right-1 opacity-0 group-hover/item:opacity-100 p-0.5 bg-white/80 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition-all"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -374,7 +375,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                 placeholder="캡션"
               />
               {/* 이미지 추가 + 블록 삭제 — 캡션 우측 오버레이 */}
-              <div className="no-print absolute bottom-[6px] right-1 flex items-center gap-0.5 opacity-[0.15] hover:opacity-100 transition-opacity">
+              <div className="absolute bottom-[6px] right-1 flex items-center gap-0.5 opacity-[0.15] hover:opacity-100 transition-opacity">
                 <label
                   className="p-0.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded cursor-pointer transition-colors"
                   title="이미지 추가"
@@ -524,57 +525,6 @@ const TIPTAP_EXTENSIONS = [
   TableHeader,
 ]
 
-// ── 프린트 CSS ───────────────────────────────────────────────
-
-const PRINT_CSS = `
-@media print {
-  .no-print { display: none !important; }
-
-  @page { size: A4 portrait; margin: 15mm; }
-  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
-  /* 사이드바/네비게이션 */
-  nav, aside, [class*="sidebar"], [class*="Sidebar"] { display: none !important; }
-
-  /* 컨테이너 */
-  .max-w-2xl { max-width: none !important; }
-  .px-6 { padding-left: 0 !important; padding-right: 0 !important; }
-  .py-6 { padding-top: 0 !important; }
-
-  /* 입력 필드 */
-  input, textarea, select {
-    border: none !important;
-    background: transparent !important;
-    -webkit-appearance: none;
-    appearance: none;
-    outline: none !important;
-    resize: none !important;
-    box-shadow: none !important;
-  }
-
-  /* Tiptap */
-  .ProseMirror { outline: none !important; min-height: 0 !important; }
-
-  /* 프린트용 날짜 빈칸 */
-  .print-date-line { display: flex !important; }
-
-  /* 데이터 이미지 최대 크기 */
-  .print-section-bottom img { max-height: 55mm; width: auto; object-fit: contain; }
-
-  /* 상단만 */
-  html[data-print="top-only"] .print-section-bottom { display: none !important; }
-
-  /* 하단만 */
-  html[data-print="bottom-only"] .print-section-top { display: none !important; }
-
-  /* 전체: 구분선 + 페이지 나누기 */
-  html[data-print="all"] .print-page-break {
-    display: block !important;
-    page-break-before: always;
-  }
-}
-`
-
 // ── 메인 컴포넌트 ─────────────────────────────────────────────
 
 export default function ExperimentDetailPage() {
@@ -593,6 +543,7 @@ export default function ExperimentDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [outcomePopup, setOutcomePopup] = useState(false)
   const [printPopup, setPrintPopup] = useState(false)
+  const [printOption, setPrintOption] = useState('all')
   const [doiInput, setDoiInput] = useState('')
   const [doiLooking, setDoiLooking] = useState(false)
   const [doiError, setDoiError] = useState('')
@@ -784,12 +735,11 @@ export default function ExperimentDetailPage() {
   // ── 프린트 ───────────────────────────────────────────────────
   async function handlePrint(option) {
     setPrintPopup(false)
-    document.documentElement.dataset.print = option
+    setPrintOption(option)
 
-    // 모든 이미지 로딩 완료 대기
-    const imgs = Array.from(
-      document.querySelectorAll('.print-section-top img, .print-section-bottom img')
-    )
+    // 프린트 컴포넌트 이미지 로딩 대기 (React 리렌더 후)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const imgs = Array.from(document.querySelectorAll('.exp-print-root img'))
     await Promise.all(
       imgs.map((img) => {
         if (img.complete && img.naturalWidth > 0) return Promise.resolve()
@@ -801,7 +751,6 @@ export default function ExperimentDetailPage() {
     )
 
     window.print()
-    delete document.documentElement.dataset.print
   }
 
   // ── 태그 ─────────────────────────────────────────────────────
@@ -833,10 +782,8 @@ export default function ExperimentDetailPage() {
   }
 
   return (
+    <>
     <div className="max-w-2xl mx-auto px-6 py-6">
-
-      {/* 프린트 CSS */}
-      <style>{PRINT_CSS}</style>
 
       {/* 미저장 이탈 경고 다이얼로그 */}
       {blocker.state === 'blocked' && (
@@ -930,7 +877,7 @@ export default function ExperimentDetailPage() {
       )}
 
       {/* 헤더 */}
-      <div className="no-print flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6">
         <button
           onClick={() => navigate('/experiments')}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
@@ -999,9 +946,6 @@ export default function ExperimentDetailPage() {
         </div>
       </div>
 
-      {/* ── 상단 구역 (실험 계획) ── */}
-      <div className="print-section-top">
-
       {/* 제목 */}
       <input
         className="w-full text-2xl font-bold text-gray-900 bg-transparent border-none outline-none placeholder-gray-300 mb-4"
@@ -1048,12 +992,6 @@ export default function ExperimentDetailPage() {
         <span className="text-xs text-gray-300 font-mono">{experiment.id}</span>
       </div>
 
-      {/* 프린트용 날짜 빈칸 (화면에서는 숨김) */}
-      <div className="print-date-line hidden items-center gap-3 text-sm mb-4 text-gray-700">
-        <span className="font-medium">실험 일자:</span>
-        <span className="border-b border-gray-700 w-48 inline-block">&nbsp;</span>
-      </div>
-
       {/* 목표 */}
       <div className="mb-6">
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">목표</label>
@@ -1066,8 +1004,8 @@ export default function ExperimentDetailPage() {
         />
       </div>
 
-      {/* 태그 (no-print) */}
-      <div className="no-print mb-6">
+      {/* 태그 */}
+      <div className="mb-6">
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">태그</label>
         <div className="flex flex-wrap gap-1.5 mb-2">
           {experiment.tags?.map((tag) => (
@@ -1100,19 +1038,11 @@ export default function ExperimentDetailPage() {
           className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors cursor-text"
           onClick={() => procedureEditor?.commands.focus()}
         >
-          <div className="no-print"><EditorToolbar editor={procedureEditor} /></div>
+          <EditorToolbar editor={procedureEditor} />
           <EditorContent editor={procedureEditor} className={EDITOR_CONTENT_CLS} />
         </div>
-        <p className="no-print text-xs text-gray-400 mt-1">엑셀에서 복사한 표를 그대로 붙여넣기 할 수 있습니다.</p>
+        <p className="text-xs text-gray-400 mt-1">엑셀에서 복사한 표를 그대로 붙여넣기 할 수 있습니다.</p>
       </div>
-
-      </div>{/* /print-section-top */}
-
-      {/* 페이지 구분 (전체 프린트 시) */}
-      <div className="print-page-break hidden" />
-
-      {/* ── 하단 구역 (데이터 + 결론) ── */}
-      <div className="print-section-bottom">
 
       {/* 데이터 블록 */}
       <DataBlocksSection
@@ -1129,17 +1059,15 @@ export default function ExperimentDetailPage() {
           className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors cursor-text"
           onClick={() => conclusionEditor?.commands.focus()}
         >
-          <div className="no-print"><EditorToolbar editor={conclusionEditor} /></div>
+          <EditorToolbar editor={conclusionEditor} />
           <EditorContent editor={conclusionEditor} className={EDITOR_CONTENT_CLS} />
         </div>
       </div>
 
-      </div>{/* /print-section-bottom */}
-
       {/* 참고문헌 */}
       <div className="mb-6">
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">참고문헌</label>
-        <div className="no-print flex gap-2 mb-2">
+        <div className="flex gap-2 mb-2">
           <input
             className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400 transition-colors font-mono"
             value={doiInput}
@@ -1156,7 +1084,7 @@ export default function ExperimentDetailPage() {
             {doiLooking ? '조회중...' : '조회'}
           </button>
         </div>
-        {doiError && <p className="no-print text-xs text-red-500 mb-2">{doiError}</p>}
+        {doiError && <p className="text-xs text-red-500 mb-2">{doiError}</p>}
         <div className="space-y-1">
           {(experiment.connections?.references ?? []).map((ref, i) => (
             <div key={i} className="flex items-start gap-2 text-xs bg-gray-50 rounded-lg px-3 py-2">
@@ -1185,7 +1113,7 @@ export default function ExperimentDetailPage() {
                   const refs = (experiment.connections?.references ?? []).filter((_, j) => j !== i)
                   update({ connections: { ...(experiment.connections ?? {}), references: refs } })
                 }}
-                className="no-print flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                className="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
                 title="삭제"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
@@ -1198,5 +1126,13 @@ export default function ExperimentDetailPage() {
       </div>
 
     </div>
+
+    {/* 프린트 전용 컴포넌트 (화면에서 숨김, 프린트 시 표시) */}
+    <ExperimentPrint
+      experiment={experiment}
+      accessToken={accessToken}
+      printOption={printOption}
+    />
+    </>
   )
 }
