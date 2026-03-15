@@ -15,10 +15,12 @@ export default function ExperimentNode({ data, selected }) {
           width: NODE_WIDTH,
           minHeight: NODE_HEIGHT,
           backgroundColor: bg,
-          border: `${selected ? 2 : 1}px solid ${selected ? '#3b82f6' : border}`,
-          borderRadius: 10,
+          border: `1.5px solid ${selected ? '#3b82f6' : border}`,
+          borderRadius: 12,
           color: text,
-          boxShadow: selected ? '0 0 0 3px rgba(59,130,246,0.25)' : undefined,
+          boxShadow: selected
+            ? '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04), 0 0 0 3px rgba(59,130,246,0.15)'
+            : '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
           padding: '8px 12px',
           boxSizing: 'border-box',
           display: 'flex',
@@ -36,9 +38,10 @@ export default function ExperimentNode({ data, selected }) {
         {statusLabel && (
           <div style={{
             fontSize: 10,
-            backgroundColor: 'rgba(0,0,0,0.07)',
-            borderRadius: 4,
-            padding: '1px 5px',
+            backgroundColor: '#f1f5f9',
+            color: '#64748b',
+            borderRadius: 6,
+            padding: '2px 7px',
             display: 'inline-block',
             alignSelf: 'flex-start',
             marginTop: 2,

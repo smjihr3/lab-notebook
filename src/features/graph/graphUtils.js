@@ -16,12 +16,12 @@ export const OUTCOME_LABELS = {
 
 export const NODE_COLORS = {
   completed: {
-    success: { bg: '#22c55e', border: '#16a34a', text: '#ffffff' },
-    failed:  { bg: '#ef4444', border: '#dc2626', text: '#ffffff' },
-    partial: { bg: '#f97316', border: '#ea580c', text: '#ffffff' },
-    unknown: { bg: '#9ca3af', border: '#6b7280', text: '#ffffff' },
+    success: { bg: '#dcfce7', border: '#16a34a', text: '#15803d' },
+    failed:  { bg: '#fee2e2', border: '#ef4444', text: '#b91c1c' },
+    partial: { bg: '#ffedd5', border: '#f97316', text: '#c2410c' },
+    unknown: { bg: '#f3f4f6', border: '#9ca3af', text: '#4b5563' },
   },
-  default:   { bg: '#ffffff', border: '#d1d5db', text: '#374151' },
+  default:   { bg: '#ffffff', border: '#e2e8f0', text: '#1e293b' },
 }
 
 // ── 스타일 / 라벨 헬퍼 ───────────────────────────────────────

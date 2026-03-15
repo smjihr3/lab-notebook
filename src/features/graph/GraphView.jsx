@@ -40,8 +40,23 @@ export default function GraphView() {
     }))
     const rawEdges = experimentsToEdges(fullList)
     const laidOut  = applyDagreLayout(rawNodes, rawEdges, dir)
+
+    // LR 모드에서 같은 rank(x 좌표)의 노드 간 엣지는 직선으로
+    let finalEdges = rawEdges
+    if (dir === 'LR') {
+      const xByNode = Object.fromEntries(laidOut.map((n) => [n.id, n.position.x]))
+      finalEdges = rawEdges.map((e) => {
+        const sx = xByNode[e.source]
+        const tx = xByNode[e.target]
+        if (sx !== undefined && tx !== undefined && sx === tx) {
+          return { ...e, type: 'straight' }
+        }
+        return e
+      })
+    }
+
     setNodes(laidOut)
-    setEdges(rawEdges)
+    setEdges(finalEdges)
   }, [])
 
   // ── 전체 실험 데이터 로드 (캐시 우선) ────────────────────────
@@ -150,6 +165,7 @@ export default function GraphView() {
     const full = fullDataRef.current[experimentId] ?? await getExperiment(experimentId)
     if (!full) return
     const updated = { ...full, status: newStatus }
+    if (newStatus !== 'completed') updated.outcome = 'unknown'
     if (outcome !== undefined) updated.outcome = outcome
     fullDataRef.current[experimentId] = updated
     await updateExperiment(updated)

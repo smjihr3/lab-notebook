@@ -123,7 +123,7 @@ export default function GraphSidePanel({ experiment, allExperiments, onClose, on
                   <button
                     key={opt.value}
                     onClick={() => {
-                      if (isActive) return
+                      if (isActive && opt.value !== 'completed') return
                       if (opt.value === 'completed') {
                         setLocalOutcomePopup(true)
                       } else {
