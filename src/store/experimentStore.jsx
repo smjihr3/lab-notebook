@@ -235,6 +235,29 @@ export function ExperimentProvider({ children }) {
       await trashFile(meta._fileId, tokenRef.current)
     }
     await _persistIndex(newList)
+
+    // ── 연결 관계 정리: 삭제된 ID를 참조하는 실험에서 해당 ID 제거 ──
+    const candidates = newList.filter((e) => {
+      const c = cacheRef.current[e.id]?.connections
+      return c?.precedingExperiments?.includes(id) || c?.followingExperiments?.includes(id)
+    })
+    await Promise.all(candidates.map(async (other) => {
+      const otherData = cacheRef.current[other.id]
+        ?? (other._fileId
+          ? await readJsonFile(other._fileId, tokenRef.current).then((r) => ({ ...r, _fileId: other._fileId })).catch(() => null)
+          : null)
+      if (!otherData) return
+      const updated = {
+        ...otherData,
+        connections: {
+          ...(otherData.connections ?? {}),
+          precedingExperiments: (otherData.connections?.precedingExperiments ?? []).filter((x) => x !== id),
+          followingExperiments: (otherData.connections?.followingExperiments ?? []).filter((x) => x !== id),
+        },
+      }
+      _patchCache((prev) => ({ ...prev, [other.id]: updated }))
+      await saveExpDrive(updated, { token: tokenRef.current, folderMap: folderMapRef.current })
+    }))
   }, [])
 
   const isFetching = useCallback((id) => fetchingIds.has(id), [fetchingIds])
