@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+body {
+  font-family: 'Inter', 'Noto Sans KR', sans-serif;
+}
+
 /* ── Tiptap 표 스타일 ─────────────────────────────────────── */
 
 .ProseMirror .tableWrapper {
