@@ -152,7 +152,7 @@ function AnalysisTypeBadge({ value, allTypes, onChange }) {
         <div
           ref={dropRef}
           style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
-          className="bg-white border border-gray-200 rounded-lg shadow-lg p-1.5 min-w-[120px]"
+          className="bg-white border border-gray-200 rounded-lg shadow-lg p-1.5 min-w-[40px]"
         >
           {allTypes.map((t) => (
             <button
@@ -320,7 +320,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         {blocks.map((block) => (
           <div
             key={block.id}
-            className="inline-flex flex-col items-start border border-gray-200 rounded-lg bg-white relative group/block"
+            className="inline-flex flex-col items-start border border-gray-200 rounded-lg bg-white"
             onPaste={(e) => handlePaste(e, block.id)}
           >
             {/* 이미지 영역 (이미지가 있을 때만 표시) */}
@@ -332,7 +332,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                       fileId={item.driveFileId || null}
                       localUrl={localUrls[item.id] ?? null}
                       accessToken={accessToken}
-                      className="h-40 w-auto object-contain rounded border border-gray-100 bg-gray-50 cursor-zoom-in"
+                      className="h-60 w-auto object-contain rounded border border-gray-100 bg-gray-50 cursor-zoom-in"
                       onClick={(src) => setLightbox(src)}
                     />
                     {/* 분석 종류 라벨 — 좌상단 반투명 오버레이 */}
@@ -358,37 +358,8 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
               </div>
             )}
 
-            {/* 블록 오버레이: 이미지 추가 + 블록 삭제 — 우상단 */}
-            <div className="absolute top-1.5 right-1.5 z-10 flex gap-0.5">
-              <label
-                className="p-0.5 bg-white/80 hover:bg-blue-50 text-gray-400 hover:text-blue-500 rounded cursor-pointer transition opacity-0 group-hover/block:opacity-50 hover:!opacity-100"
-                title="이미지 추가"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-                </svg>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handleFileInput(e, block.id)}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => deleteBlock(block.id)}
-                className="p-0.5 bg-white/80 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition opacity-0 group-hover/block:opacity-50 hover:!opacity-100"
-                title="블록 삭제"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                </svg>
-              </button>
-            </div>
-
             {/* 캡션 */}
-            <div className={`px-2 self-stretch ${block.items.length > 0 ? 'border-t border-gray-100 py-1.5' : 'py-1.5'}`}>
+            <div className={`relative px-2 self-stretch ${block.items.length > 0 ? 'border-t border-gray-100 py-1.5' : 'py-1.5'}`}>
               <textarea
                 ref={(el) => { captionRefs.current[block.id] = el }}
                 className={`w-full text-xs text-gray-700 bg-transparent outline-none placeholder-gray-300 resize-none overflow-hidden leading-relaxed ${block.items.length === 0 ? 'min-w-[120px]' : ''}`}
@@ -401,6 +372,34 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                 }}
                 placeholder="캡션"
               />
+              {/* 이미지 추가 + 블록 삭제 — 캡션 우측 오버레이 */}
+              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-[0.15] hover:opacity-100 transition-opacity">
+                <label
+                  className="p-0.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded cursor-pointer transition-colors"
+                  title="이미지 추가"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                  </svg>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => handleFileInput(e, block.id)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => deleteBlock(block.id)}
+                  className="p-0.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                  title="블록 삭제"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         ))}
