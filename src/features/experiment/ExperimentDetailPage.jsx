@@ -305,65 +305,65 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         </button>
       </div>
 
-      {blocks.length === 0 && (
-        <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center text-gray-400 text-sm">
-          "데이터 추가" 버튼으로 분석 데이터 블록을 추가하세요
-        </div>
-      )}
-
       {/* 블록 컨테이너: flex-wrap으로 가로 배치 */}
-      <div className="flex flex-wrap gap-3 items-start">
+      <div className="flex flex-wrap gap-2 items-start">
         {blocks.map((block) => (
           <div
             key={block.id}
-            className="flex flex-col border border-gray-200 rounded-xl bg-white min-w-[200px]"
+            className="flex flex-col border border-gray-200 rounded-lg bg-white"
             onPaste={(e) => handlePaste(e, block.id)}
           >
-            {/* 이미지 목록 + 추가 버튼 */}
-            <div className="p-2 flex flex-wrap gap-2">
-              {block.items.map((item) => (
-                <div key={item.id} className="relative group">
-                  <DriveImage
-                    fileId={item.driveFileId || null}
-                    localUrl={localUrls[item.id] ?? null}
-                    accessToken={accessToken}
-                    className="h-44 w-auto object-contain rounded border border-gray-200 bg-gray-50 cursor-zoom-in"
-                    onClick={(src) => setLightbox(src)}
-                  />
-                  {/* 분석 종류 라벨 — 좌상단 반투명 오버레이 */}
-                  <div className="absolute top-1 left-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                    <AnalysisTypeBadge
-                      value={item.analysisType}
-                      allTypes={allTypes}
-                      onChange={(t) => updateItem(block.id, item.id, { analysisType: t })}
+            {/* 이미지 영역 (이미지가 있을 때만 표시) */}
+            {block.items.length > 0 && (
+              <div className="p-2 flex flex-wrap gap-2">
+                {block.items.map((item) => (
+                  <div key={item.id} className="relative group">
+                    <DriveImage
+                      fileId={item.driveFileId || null}
+                      localUrl={localUrls[item.id] ?? null}
+                      accessToken={accessToken}
+                      className="h-40 w-auto object-contain rounded border border-gray-100 bg-gray-50 cursor-zoom-in"
+                      onClick={(src) => setLightbox(src)}
                     />
+                    {/* 분석 종류 라벨 — 좌상단 반투명 오버레이 */}
+                    <div className="absolute top-1 left-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                      <AnalysisTypeBadge
+                        value={item.analysisType}
+                        allTypes={allTypes}
+                        onChange={(t) => updateItem(block.id, item.id, { analysisType: t })}
+                      />
+                    </div>
+                    {/* 이미지 삭제 버튼 */}
+                    <button
+                      type="button"
+                      onClick={() => deleteItem(block.id, item.id)}
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 bg-white/80 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition-all"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
-                  {/* 이미지 삭제 버튼 */}
-                  <button
-                    type="button"
-                    onClick={() => deleteItem(block.id, item.id)}
-                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 bg-white/80 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition-all"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
+            )}
 
-              {/* 이미지 추가 버튼 */}
-              <label className={`flex-shrink-0 flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors ${block.items.length === 0 ? 'h-32 w-44 px-4' : 'h-44 w-20'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`text-gray-300 ${block.items.length === 0 ? 'w-7 h-7' : 'w-5 h-5'}`}>
+            {/* 캡션 + 이미지 추가 버튼 + 블록 삭제 */}
+            <div className={`flex items-center gap-0.5 px-2 ${block.items.length > 0 ? 'border-t border-gray-100 py-1.5' : 'py-1.5'}`}>
+              <input
+                className="flex-1 text-xs text-gray-700 bg-transparent outline-none placeholder-gray-300 min-w-[120px]"
+                value={block.caption ?? ''}
+                onChange={(e) => updateBlock(block.id, { caption: e.target.value })}
+                placeholder="캡션"
+              />
+              {/* 이미지 추가 아이콘 버튼 */}
+              <label
+                className="flex-shrink-0 p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 cursor-pointer transition-colors"
+                title="이미지 추가"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
                 </svg>
-                {block.items.length === 0 ? (
-                  <>
-                    <span className="text-xs text-gray-400">이미지 추가</span>
-                    <span className="text-xs text-gray-400">(선택)</span>
-                  </>
-                ) : (
-                  <span className="text-xs text-gray-300">추가</span>
-                )}
                 <input
                   type="file"
                   accept="image/*"
@@ -372,23 +372,14 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                   onChange={(e) => handleFileInput(e, block.id)}
                 />
               </label>
-            </div>
-
-            {/* 캡션 + 블록 삭제 */}
-            <div className="border-t border-gray-100 px-2 py-1.5 flex items-center gap-1">
-              <input
-                className="flex-1 text-xs text-gray-600 bg-transparent outline-none placeholder-gray-300 min-w-0"
-                value={block.caption ?? ''}
-                onChange={(e) => updateBlock(block.id, { caption: e.target.value })}
-                placeholder="캡션"
-              />
+              {/* 블록 삭제 버튼 */}
               <button
                 type="button"
                 onClick={() => deleteBlock(block.id)}
-                className="flex-shrink-0 p-1 text-gray-300 hover:text-red-400 transition-colors"
+                className="flex-shrink-0 p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
                 title="블록 삭제"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                 </svg>
               </button>
