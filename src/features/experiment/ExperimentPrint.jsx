@@ -77,7 +77,7 @@ const PRINT_CSS = `
 }
 
 @media print {
-  @page { size: A4 portrait; margin: 0; }
+  @page { size: A4 portrait; margin: 16mm; }
 
   /* 화면 콘텐츠 숨기고 프린트 컴포넌트만 표시 */
   body * { visibility: hidden; }
@@ -90,18 +90,18 @@ const PRINT_CSS = `
     width: 100%;
     background: white;
     color: black;
-    padding: 15mm;
-    box-sizing: border-box;
     font-size: 10pt;
     line-height: 1.5;
   }
 
-  /* ── 헤더: 좌측 ID+제목, 우측 날짜 기입란 ── */
+  /* 박스 내부 헤더: 좌측 ID+제목, 우측 날짜 기입란 */
   .epp-meta {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 5mm;
+    padding-bottom: 3mm;
+    border-bottom: 0.5pt solid #ddd;
     font-size: 8pt;
     color: #333;
     line-height: 1.7;
@@ -153,10 +153,11 @@ const PRINT_CSS = `
     border-bottom: 0.5pt solid #ccc;
   }
 
-  /* 섹션 단위 페이지 넘김 방지 */
+  /* 섹션 단위 페이지 넘김 방지 + 페이지 넘김 후 상단 여백 */
   .epp-field {
     margin-bottom: 5mm;
     break-inside: avoid;
+    padding-top: 2mm;
   }
 
   .epp-field-label {
@@ -246,22 +247,22 @@ export default function ExperimentPrint({ experiment, accessToken, printOption }
     <div className="exp-print-root" data-option={printOption ?? 'all'}>
       <style>{PRINT_CSS}</style>
 
-      {/* 헤더: 좌측 ID+제목 / 우측 날짜 기입란 */}
-      <div className="epp-meta">
-        <div className="epp-meta-left">
-          <div style={{ fontFamily: 'monospace', fontSize: '8pt', color: '#888' }}>
-            {experiment.id}
-          </div>
-          <div style={{ fontWeight: 700, fontSize: '11pt' }}>{experiment.title}</div>
-        </div>
-        <div className="epp-meta-right">
-          실험 일자:
-          <span className="epp-date-line">&nbsp;</span>
-        </div>
-      </div>
-
       {/* ── 상단 구역: 실험 계획 ── */}
       <div className="epp-section epp-top">
+        {/* 헤더: 좌측 ID+제목 / 우측 날짜 기입란 */}
+        <div className="epp-meta">
+          <div className="epp-meta-left">
+            <div style={{ fontFamily: 'monospace', fontSize: '8pt', color: '#888' }}>
+              {experiment.id}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '11pt' }}>{experiment.title}</div>
+          </div>
+          <div className="epp-meta-right">
+            실험 일자:
+            <span className="epp-date-line">&nbsp;</span>
+          </div>
+        </div>
+
         <div className="epp-section-label">실험 계획</div>
 
         {experiment.goal && (
