@@ -173,6 +173,12 @@ const PRINT_CSS = `
     white-space: pre-wrap;
   }
 
+  .epp-preceding {
+    font-size: 8pt;
+    color: #555;
+    margin-bottom: 4mm;
+  }
+
   /* 데이터 블록 */
   .epp-block {
     break-inside: avoid;
@@ -238,7 +244,7 @@ const PRINT_CSS = `
 
 // ── 메인 컴포넌트 ────────────────────────────────────────────
 
-export default function ExperimentPrint({ experiment, accessToken, printOption }) {
+export default function ExperimentPrint({ experiment, accessToken, printOption, allExperiments }) {
   if (!experiment) return null
 
   const dataBlocks = experiment.dataBlocks ?? []
@@ -264,6 +270,20 @@ export default function ExperimentPrint({ experiment, accessToken, printOption }
         </div>
 
         <div className="epp-section-label">실험 계획</div>
+
+        {(() => {
+          const precedingIds = experiment.connections?.precedingExperiments ?? []
+          if (precedingIds.length === 0) return null
+          const labels = precedingIds.map((pid) => {
+            const linked = allExperiments?.find((e) => e.id === pid)
+            return linked?.title ? `${pid} ${linked.title}` : pid
+          })
+          return (
+            <div className="epp-preceding">
+              선행 실험: {labels.join(', ')}
+            </div>
+          )
+        })()}
 
         {experiment.goal && (
           <div className="epp-field">

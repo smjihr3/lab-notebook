@@ -8,7 +8,7 @@ function generateExpId(count) {
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
   const nnn = String(count + 1).padStart(3, '0')
-  return `exp_${yy}${mm}${dd}_${nnn}`
+  return `${yy}${mm}${dd}-${nnn}`
 }
 
 export default function ExperimentNewPage() {

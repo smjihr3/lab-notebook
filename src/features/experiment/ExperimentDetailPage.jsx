@@ -1270,6 +1270,7 @@ export default function ExperimentDetailPage() {
       experiment={experiment}
       accessToken={accessToken}
       printOption={printOption}
+      allExperiments={experiments}
     />
     </>
   )
