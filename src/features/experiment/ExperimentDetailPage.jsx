@@ -1031,7 +1031,7 @@ export default function ExperimentDetailPage() {
                 {ref.journal || ref.year || ref.volume ? (
                   <>
                     {ref.journal && <em>{ref.journal}</em>}
-                    {ref.year   && <>, <strong>{ref.year}</strong></>}
+                    {ref.year   && <> <strong>{ref.year}</strong></>}
                     {ref.volume && <>, <em>{ref.volume}</em></>}
                     {ref.issue  && <>, {ref.issue}</>}
                     {ref.pages  && <>, {ref.pages}</>}
