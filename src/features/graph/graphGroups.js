@@ -10,26 +10,46 @@ export const GROUP_COLORS = [
   { name: 'teal',   value: '#5eead4' },
 ]
 
+// ── 스키마 마이그레이션 ───────────────────────────────────────
+/**
+ * 구 스키마(endNodeId: string|null) → 신 스키마(endNodeIds: string[])
+ * 이미 마이그레이션된 그룹은 그대로 반환.
+ */
+export function migrateGroup(group) {
+  if ('endNodeIds' in group) return group
+  return {
+    ...group,
+    endNodeIds: group.endNodeId ? [group.endNodeId] : [],
+  }
+}
+
+export function migrateGroups(groups) {
+  return groups.map(migrateGroup)
+}
+
 // ── 유틸 함수 ──────────────────────────────────────────────────
 
 /**
  * startNodeId에서 followingExperiments를 따라 BFS 탐색.
- * endNodeId가 null이면 모든 하위 노드 포함.
- * endNodeId가 있으면 start→end 경로상의 노드만 포함.
+ * endNodeIds가 빈 배열이면 모든 하위 노드 포함 (열린 그룹).
+ * endNodeIds에 값이 있으면:
+ *   - endNodeIds에 속한 노드는 Set에 추가하되 자식 탐색 중단 (닫힘)
+ *   - endNodeIds에 없는 분기는 계속 탐색 (열린 채로 유지)
  * @returns {Set<string>}
  */
 export function resolveGroupNodeIds(group, experiments) {
   const expMap = Object.fromEntries(experiments.map((e) => [e.id, e]))
+  // 구 스키마(endNodeId) 호환 처리
+  const endSet = new Set(group.endNodeIds ?? (group.endNodeId ? [group.endNodeId] : []))
 
-  // 전방 BFS: startNodeId → followingExperiments
-  // endNodeId 도달 시 해당 노드는 포함하되 자식 탐색 중단
   const result = new Set()
   const fq = [group.startNodeId]
   while (fq.length > 0) {
     const id = fq.shift()
     if (result.has(id)) continue
     result.add(id)
-    if (group.endNodeId && id === group.endNodeId) continue
+    // endNodeIds에 속한 노드: 포함하되 자식 탐색 중단
+    if (endSet.size > 0 && endSet.has(id)) continue
     const exp = expMap[id]
     if (!exp) continue
     for (const nid of exp.connections?.followingExperiments ?? []) {

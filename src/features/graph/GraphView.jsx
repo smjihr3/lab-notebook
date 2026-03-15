@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, useReducer } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactFlow, {
   Background, Controls,
@@ -15,7 +15,7 @@ import GraphContextMenu from './GraphContextMenu'
 import GraphSidePanel from './GraphSidePanel'
 import GroupListPanel from './GroupListPanel'
 import { useGraphGroups } from './GraphGroupProvider'
-import { resolveGroupNodeIds, getGroupBounds } from './graphGroups'
+import { resolveGroupNodeIds, getGroupBounds, generateGroupId, GROUP_COLORS } from './graphGroups'
 
 const nodeTypes = {
   experimentNode:  ExperimentNode,
@@ -25,17 +25,25 @@ const nodeTypes = {
 export default function GraphView() {
   const navigate = useNavigate()
   const { experiments, isReady, getExperiment, updateExperiment } = useExperiments()
-  const { groups } = useGraphGroups()
+  const { groups, addGroup } = useGraphGroups()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [layoutDir, setLayoutDir] = useState('LR')
   const [selectedExp, setSelectedExp]   = useState(null)
-  const [contextMenu, setContextMenu]   = useState(null)  // { x, y, experiment }
-  const [outcomePopup, setOutcomePopup] = useState(null)  // { mode, experiment }
+  const [contextMenu, setContextMenu]   = useState(null)
+  const [outcomePopup, setOutcomePopup] = useState(null)
 
-  const fullDataRef  = useRef({}) // id → full experiment data
-  const layoutDirRef = useRef('LR')
+  // ── 드래그 그룹 선택 상태 ────────────────────────────────────
+  const [isSelectMode, setIsSelectMode]         = useState(false)
+  const [selectedForGroup, setSelectedForGroup] = useState([])
+  const [groupCreatePopup, setGroupCreatePopup] = useState(false)
+  const [groupCreateName, setGroupCreateName]   = useState('')
+  const [groupCreateColor, setGroupCreateColor] = useState(GROUP_COLORS[0].value)
+  const latestSelectionRef = useRef([])
+
+  const fullDataRef   = useRef({})
+  const layoutDirRef  = useRef('LR')
   const rfInstanceRef = useRef(null)
 
   useEffect(() => { layoutDirRef.current = layoutDir }, [layoutDir])
@@ -43,7 +51,7 @@ export default function GraphView() {
   // ── 그룹 핀 정보 부여 ─────────────────────────────────────────
   function annotateGroupMarkers(nodeList) {
     const startIds = new Set(groups.map((g) => g.startNodeId))
-    const endIds   = new Set(groups.map((g) => g.endNodeId).filter(Boolean))
+    const endIds   = new Set(groups.flatMap((g) => g.endNodeIds ?? []))
     return nodeList.map((n) => ({
       ...n,
       data: {
@@ -67,7 +75,7 @@ export default function GraphView() {
 
     setNodes(annotateGroupMarkers(laidOut))
     setEdges(rawEdges)
-  }, [groups]) // groups 변경 시 핀 재계산
+  }, [groups])
 
   // groups 변경 시 기존 노드에 핀 정보 재주입
   useEffect(() => {
@@ -132,7 +140,6 @@ export default function GraphView() {
     }).filter(Boolean)
   }, [groups, expNodes])
 
-  // 배경 노드를 일반 노드 앞에 배치 (ReactFlow는 배열 순서대로 렌더)
   const displayNodes = useMemo(() => [...bgNodes, ...expNodes], [bgNodes, expNodes])
 
   // ── 레이아웃 조작 ─────────────────────────────────────────────
@@ -144,20 +151,27 @@ export default function GraphView() {
     rebuildLayout(fullDataRef.current, next)
   }
 
+  // ── setCenter / getZoom 래퍼 ──────────────────────────────────
+  const rfSetCenter = useCallback((x, y, opts) => {
+    rfInstanceRef.current?.setCenter(x, y, opts)
+  }, [])
+
+  const rfGetZoom = useCallback(() => {
+    return rfInstanceRef.current?.getZoom() ?? 1
+  }, [])
+
   // ── 그룹 드래그 이동 ──────────────────────────────────────────
   const onNodeDragStop = useCallback((event, draggedNode) => {
     if (draggedNode.type === 'groupBackground') return
-    if (event.shiftKey) return // Shift: 개별 이동
+    if (event.shiftKey) return
 
     const fullList = Object.values(fullDataRef.current)
-    // draggedNode가 속한 그룹 찾기
     const affectedGroups = groups.filter((g) => {
       const ids = resolveGroupNodeIds(g, fullList)
       return ids.has(draggedNode.id)
     })
     if (affectedGroups.length === 0) return
 
-    // 드래그 delta 계산 (draggedNode의 이전 위치는 nodes 상태 기준)
     setNodes((prev) => {
       const expPrev = prev.filter((n) => n.type !== 'groupBackground')
       const prevNode = expPrev.find((n) => n.id === draggedNode.id)
@@ -167,12 +181,11 @@ export default function GraphView() {
       const dy = draggedNode.position.y - prevNode.position.y
       if (dx === 0 && dy === 0) return prev
 
-      // 이동할 노드 ID 집합
       const moveIds = new Set()
       affectedGroups.forEach((g) => {
         resolveGroupNodeIds(g, fullList).forEach((id) => moveIds.add(id))
       })
-      moveIds.delete(draggedNode.id) // 드래그한 노드는 ReactFlow가 이미 이동
+      moveIds.delete(draggedNode.id)
 
       return prev.map((n) => {
         if (n.type === 'groupBackground') return n
@@ -182,12 +195,63 @@ export default function GraphView() {
     })
   }, [groups])
 
+  // ── 드래그 박스 선택 ──────────────────────────────────────────
+  const onSelectionChange = useCallback(({ nodes: selNodes }) => {
+    if (!isSelectMode) return
+    latestSelectionRef.current = selNodes.filter((n) => n.type !== 'groupBackground')
+  }, [isSelectMode])
+
+  function handleContainerMouseUp() {
+    if (!isSelectMode || groupCreatePopup) return
+    const sel = latestSelectionRef.current
+    if (sel.length > 0) {
+      setSelectedForGroup(sel)
+      setGroupCreatePopup(true)
+    }
+  }
+
+  function handleGroupCreate() {
+    if (!groupCreateName.trim()) return
+    const selectedIds = new Set(selectedForGroup.map((n) => n.id))
+
+    // 루트: 선택 범위 내에 선행 실험이 없는 노드
+    const roots = selectedForGroup.filter((n) => {
+      const exp = fullDataRef.current[n.id]
+      return (exp?.connections?.precedingExperiments ?? []).every((id) => !selectedIds.has(id))
+    })
+
+    // 리프: 선택 범위 내에 후속 실험이 없는 노드
+    const leaves = selectedForGroup.filter((n) => {
+      const exp = fullDataRef.current[n.id]
+      return (exp?.connections?.followingExperiments ?? []).every((id) => !selectedIds.has(id))
+    })
+
+    const startNodeId = (roots[0] ?? selectedForGroup[0]).id
+    const endNodeIds  = leaves.map((n) => n.id)
+
+    addGroup({
+      id: generateGroupId(groups),
+      name: groupCreateName.trim(),
+      color: groupCreateColor,
+      startNodeId,
+      endNodeIds,
+    })
+
+    setGroupCreatePopup(false)
+    setSelectedForGroup([])
+    setGroupCreateName('')
+    setIsSelectMode(false)
+    latestSelectionRef.current = []
+  }
+
   // ── ReactFlow 이벤트 ──────────────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
     if (node.type === 'groupBackground') return
-    setSelectedExp(node.data.experiment)
-    setContextMenu(null)
-  }, [])
+    if (!isSelectMode) {
+      setSelectedExp(node.data.experiment)
+      setContextMenu(null)
+    }
+  }, [isSelectMode])
 
   const onNodeContextMenu = useCallback((event, node) => {
     if (node.type === 'groupBackground') return
@@ -195,7 +259,10 @@ export default function GraphView() {
     setContextMenu({ x: event.clientX, y: event.clientY, experiment: node.data.experiment })
   }, [])
 
-  const onPaneClick = useCallback(() => { setContextMenu(null) }, [])
+  const onPaneClick = useCallback(() => {
+    setContextMenu(null)
+    if (isSelectMode) latestSelectionRef.current = []
+  }, [isSelectMode])
 
   const onConnect = useCallback(async (params) => {
     const { source: precedingId, target: currentId } = params
@@ -278,11 +345,6 @@ export default function GraphView() {
     if (selectedExp?.id === experimentId) setSelectedExp(updated)
   }
 
-  // ── 그룹 패널 fitBounds ───────────────────────────────────────
-  const handleFitBounds = useCallback((bounds) => {
-    rfInstanceRef.current?.fitBounds(bounds, { padding: 0.1 })
-  }, [])
-
   // ── onNodesChange: 배경 노드 변경 무시 ────────────────────────
   const handleNodesChange = useCallback((changes) => {
     const filtered = changes.filter((c) => !c.id?.startsWith('group-bg-'))
@@ -291,7 +353,7 @@ export default function GraphView() {
 
   // ── 렌더 ──────────────────────────────────────────────────────
   return (
-    <div className="w-full h-full relative">
+    <div className="w-full h-full relative" onMouseUp={handleContainerMouseUp}>
       <ReactFlow
         nodes={displayNodes}
         edges={edges}
@@ -303,7 +365,10 @@ export default function GraphView() {
         onConnect={onConnect}
         onPaneClick={onPaneClick}
         onNodeDragStop={onNodeDragStop}
+        onSelectionChange={onSelectionChange}
         onInit={(instance) => { rfInstanceRef.current = instance }}
+        selectionOnDrag={isSelectMode}
+        panOnDrag={!isSelectMode}
         fitView
         connectOnClick={false}
       >
@@ -315,7 +380,8 @@ export default function GraphView() {
       <GroupListPanel
         experiments={experiments}
         allNodes={expNodes}
-        onFitBounds={handleFitBounds}
+        setCenter={rfSetCenter}
+        getZoom={rfGetZoom}
       />
 
       {/* 툴바 */}
@@ -335,7 +401,78 @@ export default function GraphView() {
         >
           레이아웃 재정렬
         </button>
+        <button
+          onClick={() => {
+            const next = !isSelectMode
+            setIsSelectMode(next)
+            latestSelectionRef.current = []
+            if (!next) {
+              setGroupCreatePopup(false)
+              setSelectedForGroup([])
+              setGroupCreateName('')
+            }
+          }}
+          className={`text-xs px-2.5 py-1 rounded-lg shadow border transition-colors ${
+            isSelectMode
+              ? 'bg-blue-500 text-white border-blue-400 hover:bg-blue-600'
+              : 'bg-white/90 hover:bg-white border-gray-200 text-gray-600'
+          }`}
+        >
+          {isSelectMode ? '선택 모드 ON' : '범위로 그룹 지정'}
+        </button>
       </div>
+
+      {/* 드래그 선택 그룹 생성 팝업 */}
+      {groupCreatePopup && (
+        <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+          <div
+            className="bg-white rounded-xl shadow-xl border border-gray-200 p-4 space-y-3 w-64 pointer-events-auto"
+            onMouseUp={(e) => e.stopPropagation()}
+          >
+            <div className="text-sm font-semibold text-gray-700">그룹 생성</div>
+            <div className="text-xs text-gray-400">{selectedForGroup.length}개 노드 선택됨</div>
+            <input
+              autoFocus
+              value={groupCreateName}
+              onChange={(e) => setGroupCreateName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleGroupCreate() }}
+              placeholder="그룹명"
+              className="w-full text-sm border border-gray-200 rounded px-3 py-1.5 outline-none focus:border-blue-400"
+            />
+            <div className="flex gap-1.5">
+              {GROUP_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setGroupCreateColor(c.value)}
+                  style={{ backgroundColor: c.value }}
+                  className={`w-5 h-5 rounded-full transition-transform ${groupCreateColor === c.value ? 'ring-2 ring-offset-1 ring-gray-400 scale-110' : ''}`}
+                />
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleGroupCreate}
+                disabled={!groupCreateName.trim()}
+                className="flex-1 text-sm bg-blue-500 text-white rounded px-3 py-1.5 hover:bg-blue-600 disabled:opacity-40"
+              >
+                확인
+              </button>
+              <button
+                onClick={() => {
+                  setGroupCreatePopup(false)
+                  setSelectedForGroup([])
+                  setGroupCreateName('')
+                  setIsSelectMode(false)
+                  latestSelectionRef.current = []
+                }}
+                className="text-sm text-gray-400 hover:text-gray-600 px-2"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 컨텍스트 메뉴 */}
       {contextMenu && (

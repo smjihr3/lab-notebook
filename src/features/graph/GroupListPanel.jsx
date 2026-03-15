@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import { useGraphGroups } from './GraphGroupProvider'
 import { generateGroupId, resolveGroupNodeIds, getGroupBounds, GROUP_COLORS } from './graphGroups'
 
-function ExperimentSearchInput({ experiments, excludeId, placeholder, value, onChange }) {
+function ExperimentSearchInput({ experiments, excludeIds = [], placeholder, value, onChange }) {
   const [query, setQuery] = useState('')
-  const [open, setOpen] = useState(false)
+  const [open, setOpen]   = useState(false)
   const ref = useRef(null)
 
   useEffect(() => {
@@ -14,7 +14,7 @@ function ExperimentSearchInput({ experiments, excludeId, placeholder, value, onC
   }, [])
 
   const filtered = experiments.filter((e) =>
-    e.id !== excludeId &&
+    !excludeIds.includes(e.id) &&
     (e.id.includes(query) || (e.title ?? '').includes(query))
   ).slice(0, 8)
 
@@ -72,7 +72,7 @@ function NewGroupForm({ experiments, onSubmit, onCancel }) {
       name: name.trim(),
       color,
       startNodeId: startId,
-      endNodeId: endId ?? null,
+      endNodeIds: endId ? [endId] : [],
     })
   }
 
@@ -97,14 +97,14 @@ function NewGroupForm({ experiments, onSubmit, onCancel }) {
       </div>
       <ExperimentSearchInput
         experiments={experiments}
-        excludeId={endId}
+        excludeIds={endId ? [endId] : []}
         placeholder="시작 실험 검색"
         value={startId}
         onChange={setStartId}
       />
       <ExperimentSearchInput
         experiments={experiments}
-        excludeId={startId}
+        excludeIds={startId ? [startId] : []}
         placeholder="끝 실험 (선택)"
         value={endId}
         onChange={setEndId}
@@ -125,25 +125,39 @@ function NewGroupForm({ experiments, onSubmit, onCancel }) {
   )
 }
 
-function GroupItem({ group, experiments, allNodes, onFitBounds, onRemove }) {
+function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove }) {
   const { updateGroup } = useGraphGroups()
-  const [expanded, setExpanded]     = useState(false)
+  const [expanded, setExpanded]       = useState(false)
   const [editingName, setEditingName] = useState(false)
-  const [nameVal, setNameVal]       = useState(group.name)
-  const [editingEnd, setEditingEnd] = useState(false)
+  const [nameVal, setNameVal]         = useState(group.name)
+  const [addingEnd, setAddingEnd]     = useState(false)
 
-  const nodeIds  = resolveGroupNodeIds(group, experiments)
-  const startExp = experiments.find((e) => e.id === group.startNodeId)
-  const endExp   = group.endNodeId ? experiments.find((e) => e.id === group.endNodeId) : null
+  const endNodeIds = group.endNodeIds ?? []
+  const nodeIds    = resolveGroupNodeIds(group, experiments)
+  const startExp   = experiments.find((e) => e.id === group.startNodeId)
+  const excludeIds = [group.startNodeId, ...endNodeIds]
 
   function handleFit() {
     const bounds = getGroupBounds(nodeIds, allNodes)
-    if (bounds) onFitBounds(bounds)
+    if (!bounds) return
+    const cx = bounds.x + bounds.width  / 2
+    const cy = bounds.y + bounds.height / 2
+    setCenter(cx, cy, { zoom: getZoom(), duration: 400 })
   }
 
   function handleNameBlur() {
     if (nameVal.trim() && nameVal !== group.name) updateGroup(group.id, { name: nameVal.trim() })
     setEditingName(false)
+  }
+
+  function handleAddEnd(id) {
+    if (!id || endNodeIds.includes(id)) return
+    updateGroup(group.id, { endNodeIds: [...endNodeIds, id] })
+    setAddingEnd(false)
+  }
+
+  function handleRemoveEnd(id) {
+    updateGroup(group.id, { endNodeIds: endNodeIds.filter((x) => x !== id) })
   }
 
   return (
@@ -157,11 +171,11 @@ function GroupItem({ group, experiments, allNodes, onFitBounds, onRemove }) {
             onChange={(e) => setNameVal(e.target.value)}
             onBlur={handleNameBlur}
             onKeyDown={(e) => { if (e.key === 'Enter') handleNameBlur() }}
-            className="flex-1 text-xs border-b border-blue-400 outline-none bg-transparent"
+            className="flex-1 text-sm font-semibold border-b border-blue-400 outline-none bg-transparent"
           />
         ) : (
           <button
-            className="flex-1 text-left text-xs font-medium text-gray-700 truncate"
+            className="flex-1 text-left text-sm font-semibold text-gray-700 truncate"
             onClick={handleFit}
             onDoubleClick={() => setEditingName(true)}
           >
@@ -183,36 +197,60 @@ function GroupItem({ group, experiments, allNodes, onFitBounds, onRemove }) {
       </div>
 
       {expanded && (
-        <div className="px-4 pb-2 space-y-1">
+        <div className="px-4 pb-2 space-y-1.5">
+          {/* 시작 실험 */}
           <div className="text-xs text-gray-400">
             시작: <span className="font-mono text-gray-600">{group.startNodeId}</span>
             {startExp?.title && <span className="text-gray-500 ml-1">{startExp.title}</span>}
           </div>
-          <div className="text-xs text-gray-400 flex items-center gap-1">
-            끝:&nbsp;
-            {editingEnd ? (
-              <div className="flex-1">
-                <ExperimentSearchInput
-                  experiments={experiments}
-                  excludeId={group.startNodeId}
-                  placeholder="끝 실험 검색"
-                  value={group.endNodeId}
-                  onChange={(id) => { updateGroup(group.id, { endNodeId: id }); setEditingEnd(false) }}
-                />
-              </div>
+
+          {/* 끝점 목록 */}
+          <div className="text-xs text-gray-400">
+            <div className="mb-0.5">끝점:</div>
+            {endNodeIds.length === 0 ? (
+              <span className="text-gray-300 italic">열린 그룹</span>
             ) : (
-              <>
-                <span className="font-mono text-gray-600">
-                  {endExp ? `${group.endNodeId}` : '열린 그룹'}
-                </span>
-                {endExp?.title && <span className="text-gray-500">{endExp.title}</span>}
-                <button
-                  onClick={() => setEditingEnd(true)}
-                  className="text-blue-400 hover:text-blue-600 text-xs ml-1"
-                >변경</button>
-              </>
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {endNodeIds.map((id) => {
+                  const exp = experiments.find((e) => e.id === id)
+                  return (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5 text-gray-600 font-mono text-xs"
+                    >
+                      {id}
+                      {exp?.title && (
+                        <span className="font-sans text-gray-500 truncate max-w-[56px]">{exp.title}</span>
+                      )}
+                      <button
+                        onClick={() => handleRemoveEnd(id)}
+                        className="text-gray-300 hover:text-red-400 ml-0.5 leading-none"
+                      >×</button>
+                    </span>
+                  )
+                })}
+              </div>
             )}
           </div>
+
+          {/* 끝점 추가 */}
+          {addingEnd ? (
+            <ExperimentSearchInput
+              experiments={experiments}
+              excludeIds={excludeIds}
+              placeholder="끝점 추가..."
+              value={null}
+              onChange={(id) => handleAddEnd(id)}
+            />
+          ) : (
+            <button
+              onClick={() => setAddingEnd(true)}
+              className="text-xs text-blue-400 hover:text-blue-600"
+            >
+              + 끝점 추가
+            </button>
+          )}
+
           <div className="text-xs text-gray-400">포함 실험: {nodeIds.size}개</div>
         </div>
       )}
@@ -220,7 +258,7 @@ function GroupItem({ group, experiments, allNodes, onFitBounds, onRemove }) {
   )
 }
 
-export default function GroupListPanel({ experiments, allNodes, onFitBounds }) {
+export default function GroupListPanel({ experiments, allNodes, setCenter, getZoom }) {
   const { groups, addGroup, removeGroup } = useGraphGroups()
   const [collapsed, setCollapsed] = useState(false)
   const [showForm,  setShowForm]  = useState(false)
@@ -239,7 +277,7 @@ export default function GroupListPanel({ experiments, allNodes, onFitBounds }) {
   }
 
   return (
-    <div className="absolute left-4 top-4 z-10 w-56 bg-white/95 border border-gray-200 rounded-xl shadow-lg flex flex-col max-h-[70vh]">
+    <div className="absolute left-4 top-4 z-10 w-60 bg-white/95 border border-gray-200 rounded-xl shadow-lg flex flex-col max-h-[70vh]">
       {/* 헤더 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 shrink-0">
         <span className="text-xs font-semibold text-gray-600">그룹 목록</span>
@@ -281,7 +319,8 @@ export default function GroupListPanel({ experiments, allNodes, onFitBounds }) {
               group={g}
               experiments={experiments}
               allNodes={allNodes}
-              onFitBounds={onFitBounds}
+              setCenter={setCenter}
+              getZoom={getZoom}
               onRemove={() => removeGroup(g.id)}
             />
           ))

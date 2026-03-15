@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect } f
 import { useAuth } from '../../store/authStore'
 import { useDrive } from '../../store/driveStore'
 import { findFile, readJsonFile, createJsonFile, updateJsonFile } from '../../services/drive/driveClient'
+import { migrateGroups } from './graphGroups'
 
 const GraphGroupContext = createContext(null)
 const FILE_NAME = 'graph_groups.json'
@@ -25,7 +26,7 @@ export function GraphGroupProvider({ children }) {
         if (file) {
           fileIdRef.current = file.id
           const data = await readJsonFile(file.id, accessToken)
-          setGroups(Array.isArray(data) ? data : [])
+          setGroups(Array.isArray(data) ? migrateGroups(data) : [])
         } else {
           const created = await createJsonFile(FILE_NAME, folderMap.root, [], accessToken)
           fileIdRef.current = created.id
