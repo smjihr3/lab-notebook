@@ -311,6 +311,79 @@ export default function GraphView() {
     }
   }, [getExperiment, updateExperiment])
 
+  // ── 그룹에서 노드 제외 ────────────────────────────────────────
+  function handleExcludeFromGroup(experimentId, groupId) {
+    const group = groups.find((g) => g.id === groupId)
+    if (!group) return
+
+    const fullList = Object.values(fullDataRef.current)
+    const currentNodeIds = resolveGroupNodeIds(group, fullList)
+
+    const startNodeIds = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
+    let endNodeIds = [...(group.endNodeIds ?? [])]
+
+    // BFS: X에서 followingExperiments를 따라 도달 가능한 모든 노드
+    function reachableFrom(startId) {
+      const visited = new Set()
+      const queue = [startId]
+      while (queue.length > 0) {
+        const id = queue.shift()
+        if (visited.has(id)) continue
+        visited.add(id)
+        const exp = fullDataRef.current[id]
+        for (const nid of exp?.connections?.followingExperiments ?? []) {
+          if (!visited.has(nid)) queue.push(nid)
+        }
+      }
+      return visited
+    }
+
+    const reachableFromX = reachableFrom(experimentId)
+
+    // Case 1: X가 startNodeIds에 포함된 경우
+    if (startNodeIds.includes(experimentId)) {
+      // X를 endNodeIds에 추가 (그룹에는 포함되되 이후 경로 차단)
+      if (!endNodeIds.includes(experimentId)) endNodeIds.push(experimentId)
+      // X에서 도달 가능한 노드 중 endNodeIds에 포함된 것 제거 (X 자신 제외)
+      endNodeIds = endNodeIds.filter((id) => id === experimentId || !reachableFromX.has(id))
+      updateGroup(groupId, { endNodeIds })
+      return
+    }
+
+    // Step 2: 그룹 내 부모 파악
+    const expX = fullDataRef.current[experimentId]
+    const groupParents = (expX?.connections?.precedingExperiments ?? [])
+      .filter((id) => currentNodeIds.has(id))
+
+    if (groupParents.length === 0) return
+
+    // Step 3: 분기 여부 판단 — 그룹 내 부모 중 그룹 내 자식이 2개 이상인 것이 있으면 분기
+    const branchingParents = groupParents.filter((parentId) => {
+      const parentExp = fullDataRef.current[parentId]
+      const childrenInGroup = (parentExp?.connections?.followingExperiments ?? [])
+        .filter((id) => currentNodeIds.has(id))
+      return childrenInGroup.length >= 2
+    })
+    const isBranchFirst = branchingParents.length > 0
+
+    // X에서 도달 가능한 노드 중 endNodeIds에 포함된 것 제거 (X 자신 제외)
+    endNodeIds = endNodeIds.filter((id) => id === experimentId || !reachableFromX.has(id))
+
+    if (isBranchFirst) {
+      // 4-A: 분기 부모를 endNodeIds에 추가 (없으면) → 부모까지만 그룹에 포함
+      for (const parentId of branchingParents) {
+        if (!endNodeIds.includes(parentId)) endNodeIds.push(parentId)
+      }
+    } else {
+      // 4-B: 단일 경로 — 그룹 내 부모 전체를 endNodeIds에 추가
+      for (const parentId of groupParents) {
+        if (!endNodeIds.includes(parentId)) endNodeIds.push(parentId)
+      }
+    }
+
+    updateGroup(groupId, { endNodeIds })
+  }
+
   // ── Outcome 선택 ──────────────────────────────────────────────
   async function handleOutcomeSelect(outcome) {
     const exp = outcomePopup?.experiment
@@ -509,6 +582,7 @@ export default function GraphView() {
           onOpen={() => navigate(`/experiments/${contextMenu.experiment.id}`)}
           onComplete={() => setOutcomePopup({ mode: 'complete', experiment: contextMenu.experiment })}
           onChangeOutcome={() => setOutcomePopup({ mode: 'change', experiment: contextMenu.experiment })}
+          onExclude={handleExcludeFromGroup}
           onClose={() => setContextMenu(null)}
         />
       )}

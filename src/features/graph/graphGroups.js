@@ -15,7 +15,6 @@ export const GROUP_COLORS = [
  * 구 스키마 → 신 스키마 변환:
  *   startNodeId  → startNodeIds: string[]
  *   endNodeId    → endNodeIds:   string[]
- *   (신규) excludedNodeIds: string[]  기본 []
  */
 export function migrateGroup(group) {
   const g = { ...group }
@@ -24,9 +23,6 @@ export function migrateGroup(group) {
   }
   if (!('endNodeIds' in g)) {
     g.endNodeIds = g.endNodeId ? [g.endNodeId] : []
-  }
-  if (!('excludedNodeIds' in g)) {
-    g.excludedNodeIds = []
   }
   return g
 }
@@ -43,19 +39,13 @@ export function migrateGroups(groups) {
  * endNodeIds: 해당 노드는 result에 추가하되 자식 탐색 중단 (닫힘).
  *             빈 배열이면 열린 그룹 (모든 하위 탐색).
  *
- * excludedNodeIds: BFS에서 해당 노드를 건너뜀 (result에 추가 안 함, 자식 탐색 안 함).
- *                  단, 다른 경로로 먼저 방문된 경우(수렴 경로)는 이미 result에 있으므로
- *                  `result.has(id)` 체크가 먼저 걸려 중복 스킵됨.
- *                  → 제외 노드의 하위 중 다른 경로로 도달 가능한 노드는 포함 유지.
- *
  * @returns {Set<string>}
  */
 export function resolveGroupNodeIds(group, experiments) {
-  const expMap      = Object.fromEntries(experiments.map((e) => [e.id, e]))
-  const endSet      = new Set(group.endNodeIds      ?? (group.endNodeId      ? [group.endNodeId]      : []))
-  const excludedSet = new Set(group.excludedNodeIds ?? [])
+  const expMap   = Object.fromEntries(experiments.map((e) => [e.id, e]))
+  const endSet   = new Set(group.endNodeIds ?? (group.endNodeId ? [group.endNodeId] : []))
   // 구 스키마(startNodeId) 호환
-  const startIds    = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
+  const startIds = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
 
   const result = new Set()
   const fq = [...startIds]
@@ -63,8 +53,6 @@ export function resolveGroupNodeIds(group, experiments) {
   while (fq.length > 0) {
     const id = fq.shift()
     if (result.has(id)) continue
-    // 제외 노드: result에 추가하지 않고 자식도 탐색 안 함
-    if (excludedSet.has(id)) continue
     result.add(id)
     // endNodeIds 도달: result에 추가(확인) 후 자식 탐색 중단
     if (endSet.size > 0 && endSet.has(id)) continue

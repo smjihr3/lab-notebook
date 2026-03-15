@@ -5,12 +5,12 @@ import { generateGroupId, GROUP_COLORS, resolveGroupNodeIds } from './graphGroup
 const MENU_WIDTH = 200
 
 export default function GraphContextMenu({
-  x, y, experiment, experiments, onOpen, onComplete, onChangeOutcome, onClose,
+  x, y, experiment, experiments, onOpen, onComplete, onChangeOutcome, onExclude, onClose,
 }) {
   const menuRef = useRef(null)
   const { groups, addGroup, updateGroup, removeGroup } = useGraphGroups()
 
-  // null | 'newGroup' | 'addStart' | 'removeStart' | 'endTarget' | 'removeEnd' | 'excludeFrom' | 'removeExclude'
+  // null | 'newGroup' | 'addStart' | 'removeStart' | 'endTarget' | 'removeEnd' | 'excludeFrom'
   const [subMode, setSubMode] = useState(null)
   const [newGroupName, setNewGroupName]   = useState('')
   const [newGroupColor, setNewGroupColor] = useState(GROUP_COLORS[0].value)
@@ -30,18 +30,16 @@ export default function GraphContextMenu({
 
   const getStartIds = (g) => g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : [])
 
-  const groupsWithThisStart   = groups.filter((g) => getStartIds(g).includes(experiment.id))
-  const isStart                = groupsWithThisStart.length > 0
-  const isEnd                  = groups.some((g) => (g.endNodeIds ?? []).includes(experiment.id))
-  const eligibleGroups         = groups.filter((g) => !(g.endNodeIds ?? []).includes(experiment.id))
-  const groupsWithThisEnd      = groups.filter((g) => (g.endNodeIds ?? []).includes(experiment.id))
-  const eligibleStartGroups    = groups.filter((g) => !getStartIds(g).includes(experiment.id))
-  const groupsExcludingNode    = groups.filter((g) => (g.excludedNodeIds ?? []).includes(experiment.id))
-  // 이 노드가 BFS 결과에 포함되고 아직 제외되지 않은 그룹
-  const groupsContainingNode   = groups.filter((g) => {
-    if ((g.excludedNodeIds ?? []).includes(experiment.id)) return false
-    return resolveGroupNodeIds(g, experiments ?? []).has(experiment.id)
-  })
+  const groupsWithThisStart = groups.filter((g) => getStartIds(g).includes(experiment.id))
+  const isStart              = groupsWithThisStart.length > 0
+  const isEnd                = groups.some((g) => (g.endNodeIds ?? []).includes(experiment.id))
+  const eligibleGroups       = groups.filter((g) => !(g.endNodeIds ?? []).includes(experiment.id))
+  const groupsWithThisEnd    = groups.filter((g) => (g.endNodeIds ?? []).includes(experiment.id))
+  const eligibleStartGroups  = groups.filter((g) => !getStartIds(g).includes(experiment.id))
+  // 이 노드가 BFS 결과에 포함된 그룹
+  const groupsContainingNode = groups.filter((g) =>
+    resolveGroupNodeIds(g, experiments ?? []).has(experiment.id)
+  )
 
   function handleAddGroup() {
     if (!newGroupName.trim()) return
@@ -91,23 +89,6 @@ export default function GraphContextMenu({
     } else {
       updateGroup(g.id, { startNodeIds: newIds })
     }
-    onClose()
-  }
-
-  function handleExclude(groupId) {
-    const g = groups.find((g) => g.id === groupId)
-    if (!g) return
-    const existing = g.excludedNodeIds ?? []
-    if (!existing.includes(experiment.id)) {
-      updateGroup(groupId, { excludedNodeIds: [...existing, experiment.id] })
-    }
-    onClose()
-  }
-
-  function handleUnexclude(groupId) {
-    const g = groups.find((g) => g.id === groupId)
-    if (!g) return
-    updateGroup(groupId, { excludedNodeIds: (g.excludedNodeIds ?? []).filter((x) => x !== experiment.id) })
     onClose()
   }
 
@@ -309,7 +290,7 @@ export default function GraphContextMenu({
             {groupsContainingNode.map((g) => (
               <button
                 key={g.id}
-                onClick={() => handleExclude(g.id)}
+                onClick={() => { onExclude(experiment.id, g.id); onClose() }}
                 className="w-full text-left flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-red-50"
               >
                 <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
@@ -323,41 +304,7 @@ export default function GraphContextMenu({
             className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
             onClick={() => setSubMode('excludeFrom')}
           >
-            이 노드부터 그룹에서 제외
-          </button>
-        )
-      )}
-
-      {/* 그룹 제외 해제 */}
-      {groupsExcludingNode.length > 0 && (
-        subMode === 'removeExclude' ? (
-          <div className="px-3 py-2 space-y-1">
-            <div className="text-xs text-gray-400 mb-1">제외 해제할 그룹:</div>
-            {groupsExcludingNode.map((g) => (
-              <button
-                key={g.id}
-                onClick={() => handleUnexclude(g.id)}
-                className="w-full text-left flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-green-50"
-              >
-                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
-                <span className="truncate">{g.name}</span>
-              </button>
-            ))}
-            <button onClick={() => setSubMode(null)} className="text-xs text-gray-400 hover:text-gray-600 mt-1">취소</button>
-          </div>
-        ) : groupsExcludingNode.length === 1 ? (
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors"
-            onClick={() => handleUnexclude(groupsExcludingNode[0].id)}
-          >
-            그룹 제외 해제
-          </button>
-        ) : (
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors"
-            onClick={() => setSubMode('removeExclude')}
-          >
-            그룹 제외 해제
+            이 노드를 그룹에서 제외
           </button>
         )
       )}
