@@ -27,7 +27,7 @@ const nodeTypes = {
 
 export default function GraphView() {
   const navigate = useNavigate()
-  const { experiments, isReady, getExperiment, updateExperiment } = useExperiments()
+  const { experiments, isReady, getExperiment, updateExperiment, createExperiment } = useExperiments()
   const { groups, addGroup, updateGroup } = useGraphGroups()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
@@ -36,6 +36,13 @@ export default function GraphView() {
   const [selectedExp, setSelectedExp]   = useState(null)
   const [contextMenu, setContextMenu]   = useState(null)
   const [outcomePopup, setOutcomePopup] = useState(null)
+  const [toast, setToast]               = useState(null)  // { message, type }
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   // ── 드래그 그룹 선택 상태 ────────────────────────────────────
   const [isSelectMode, setIsSelectMode]         = useState(false)
@@ -439,6 +446,43 @@ export default function GraphView() {
     if (selectedExp?.id === experimentId) setSelectedExp(updated)
   }
 
+  // ── 새 실험 노트 생성 ─────────────────────────────────────────
+  function generateExpId(expList) {
+    const now = new Date()
+    const prefix = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+    const nums = expList.map((e) => { const m = e.id.match(/^(?:exp_)?(\d{6})[_-](\d{3})$/); return m?.[1] === prefix ? parseInt(m[2], 10) : 0 }).filter(Boolean)
+    return `${prefix}-${String(nums.length > 0 ? Math.max(...nums) + 1 : 1).padStart(3, '0')}`
+  }
+
+  async function handleCreateNote() {
+    try {
+      const base = '새 실험 노트'
+      const titles = new Set(experiments.map((e) => e.title))
+      let title = base
+      if (titles.has(base)) { let n = 2; while (titles.has(`${base} (${n})`)) n++; title = `${base} (${n})` }
+      const newExp = {
+        id: generateExpId(experiments),
+        projectId: null,
+        title,
+        createdAt: new Date().toISOString(),
+        dataReceivedAt: null,
+        status: 'in_progress',
+        outcome: 'unknown',
+        goal: '',
+        tags: [],
+        procedure: { common: null, conditionTable: {}, observations: {} },
+        dataBlocks: [],
+        conclusion: null,
+        connections: { precedingExperiments: [], followingExperiments: [], references: [] },
+      }
+      const saved = await createExperiment(newExp)
+      navigate(`/experiments/${saved.id}`)
+    } catch (err) {
+      console.error('새 실험 노트 생성 실패:', err)
+      setToast({ message: err?.message ?? '새 실험 노트 생성에 실패했습니다.', type: 'error' })
+    }
+  }
+
   // ── onNodesChange: 배경 노드 변경 무시 ────────────────────────
   const handleNodesChange = useCallback((changes) => {
     const filtered = changes.filter((c) => !c.id?.startsWith('group-bg-'))
@@ -476,6 +520,7 @@ export default function GraphView() {
         allNodes={expNodes}
         setCenter={rfSetCenter}
         getZoom={rfGetZoom}
+        getFullExperiments={() => Object.values(fullDataRef.current)}
       />
 
       {/* 툴바 */}
@@ -483,6 +528,12 @@ export default function GraphView() {
         <span className="text-xs text-gray-500 bg-white/90 px-2 py-1 rounded-lg shadow border border-gray-200">
           {experiments.length}개 실험
         </span>
+        <button
+          onClick={handleCreateNote}
+          className="text-xs bg-blue-500 text-white hover:bg-blue-600 px-2.5 py-1 rounded-lg shadow transition-colors"
+        >
+          + 새 실험 노트
+        </button>
         <button
           onClick={toggleDirection}
           className="text-xs bg-white/90 hover:bg-white border border-gray-200 px-2.5 py-1 rounded-lg shadow text-gray-600 transition-colors"
@@ -614,6 +665,13 @@ export default function GraphView() {
           }}
           onStatusChange={handleStatusChange}
         />
+      )}
+
+      {/* 에러 토스트 */}
+      {toast && (
+        <div className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm text-white pointer-events-none ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
+          {toast.message}
+        </div>
       )}
 
       {/* Outcome 팝업 */}

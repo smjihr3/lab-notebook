@@ -19,7 +19,7 @@ export default function GroupBackgroundNode({ data }) {
           inset: 0,
           borderRadius: 20,
           backgroundColor: color,
-          opacity: 0.12,
+          opacity: 0.2,
         }}
       />
       {/* 테두리 */}
@@ -28,8 +28,7 @@ export default function GroupBackgroundNode({ data }) {
           position: 'absolute',
           inset: 0,
           borderRadius: 20,
-          border: `1.5px solid ${color}`,
-          opacity: 0.5,
+          border: `2px solid ${color}`,
           boxSizing: 'border-box',
         }}
       />
@@ -39,11 +38,13 @@ export default function GroupBackgroundNode({ data }) {
           position: 'absolute',
           top: 8,
           left: 12,
-          fontSize: 11,
-          fontWeight: 600,
+          padding: '0 0',
+          fontSize: 13,
+          fontWeight: 700,
           color,
           whiteSpace: 'nowrap',
           pointerEvents: 'none',
+          textShadow: '0 0 4px rgba(255,255,255,0.8)',
         }}
       >
         {name}

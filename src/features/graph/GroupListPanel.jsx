@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useGraphGroups } from './GraphGroupProvider'
-import { generateGroupId, resolveGroupNodeIds, getGroupBounds, getGroupEndpointNodeIds, isEndNode, GROUP_COLORS } from './graphGroups'
+import {
+  generateGroupId, resolveGroupNodeIds, getGroupBounds,
+  getGroupEndpointNodeIds, isEndNode, GROUP_COLORS,
+} from './graphGroups'
 
+// ── 실험 검색 입력 ────────────────────────────────────────────
 function ExperimentSearchInput({ experiments, excludeIds = [], placeholder, value, onChange }) {
   const [query, setQuery] = useState('')
   const [open, setOpen]   = useState(false)
@@ -26,10 +30,7 @@ function ExperimentSearchInput({ experiments, excludeIds = [], placeholder, valu
         <div className="flex items-center gap-1 text-xs border border-gray-200 rounded px-2 py-1">
           <span className="font-mono text-gray-400">{selected.id}</span>
           <span className="truncate text-gray-700">{selected.title || '(제목 없음)'}</span>
-          <button
-            onClick={() => { onChange(null); setQuery('') }}
-            className="ml-auto text-gray-300 hover:text-gray-500"
-          >×</button>
+          <button onClick={() => { onChange(null); setQuery('') }} className="ml-auto text-gray-300 hover:text-gray-500">×</button>
         </div>
       ) : (
         <input
@@ -58,6 +59,7 @@ function ExperimentSearchInput({ experiments, excludeIds = [], placeholder, valu
   )
 }
 
+// ── 새 그룹 폼 ────────────────────────────────────────────────
 function NewGroupForm({ experiments, onSubmit, onCancel }) {
   const { groups } = useGraphGroups()
   const [name, setName]       = useState('')
@@ -118,36 +120,95 @@ function NewGroupForm({ experiments, onSubmit, onCancel }) {
         >
           확인
         </button>
-        <button onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600 px-2">
-          취소
-        </button>
+        <button onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600 px-2">취소</button>
       </div>
     </div>
   )
 }
 
-function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove }) {
+// ── 그룹 항목 ─────────────────────────────────────────────────
+function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove, getFullExperiments }) {
   const { updateGroup, removeGroup } = useGraphGroups()
-  const [expanded, setExpanded]       = useState(false)
-  const [editingName, setEditingName] = useState(false)
-  const [nameVal, setNameVal]         = useState(group.name)
-  const [addingEnd, setAddingEnd]     = useState(false)
-  const [addingStart, setAddingStart] = useState(false)
+  const [expanded, setExpanded]         = useState(false)
+  const [editingName, setEditingName]   = useState(false)
+  const [nameVal, setNameVal]           = useState(group.name)
+  const [addingEnd, setAddingEnd]       = useState(false)
+  const [addingStart, setAddingStart]   = useState(false)
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const [showNavPopover, setShowNavPopover]   = useState(false)
+
+  const colorPickerRef = useRef(null)
+  const navPopoverRef  = useRef(null)
+
+  useEffect(() => {
+    function h(e) { if (!colorPickerRef.current?.contains(e.target)) setShowColorPicker(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  useEffect(() => {
+    function h(e) { if (!navPopoverRef.current?.contains(e.target)) setShowNavPopover(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
 
   const startNodeIds  = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
   const nodeIds       = resolveGroupNodeIds(group, experiments)
-  // 실제 끝점: 등록된 후보(blockedEdges.from + terminalNodeIds) 중 그룹 내 활성 자식이 없는 것
   const endpointIds   = new Set(
     [...getGroupEndpointNodeIds(group)].filter((id) => isEndNode(id, group, nodeIds, experiments))
   )
   const excludeIds    = [...startNodeIds, ...endpointIds]
 
-  function handleFit() {
+  // 노드 중심 좌표 계산
+  function getNodeCenter(nodeId) {
+    const rfNode = allNodes.find((n) => n.id === nodeId)
+    if (!rfNode) return null
+    return {
+      x: rfNode.position.x + (rfNode.width  ?? 160) / 2,
+      y: rfNode.position.y + (rfNode.height ?? 60)  / 2,
+    }
+  }
+
+  function navigateTo(nodeId) {
+    const pos = getNodeCenter(nodeId)
+    if (!pos) return
+    setCenter(pos.x, pos.y, { zoom: getZoom(), duration: 400 })
+    setShowNavPopover(false)
+  }
+
+  function handleNavigateToStart() {
+    if (startNodeIds.length > 0) navigateTo(startNodeIds[0])
+  }
+
+  function handleNavigateToEnd() {
+    if (endpointIds.size > 0) {
+      navigateTo([...endpointIds][0])
+      return
+    }
+    // 열린 그룹: 그룹 내 말단 노드(그룹 내 활성 자식 없는 노드)
+    const fullExps = getFullExperiments?.() ?? experiments
+    const leafIds = [...nodeIds].filter((id) => {
+      const exp = fullExps.find((e) => e.id === id)
+      return (exp?.connections?.followingExperiments ?? []).filter((c) => nodeIds.has(c)).length === 0
+    })
+    if (leafIds.length > 0) {
+      const centers = leafIds.map(getNodeCenter).filter(Boolean)
+      if (centers.length > 0) {
+        const avgX = centers.reduce((s, p) => s + p.x, 0) / centers.length
+        const avgY = centers.reduce((s, p) => s + p.y, 0) / centers.length
+        setCenter(avgX, avgY, { zoom: getZoom(), duration: 400 })
+        setShowNavPopover(false)
+        return
+      }
+    }
+    handleNavigateToGroupBounds()
+  }
+
+  function handleNavigateToGroupBounds() {
     const bounds = getGroupBounds(nodeIds, allNodes)
     if (!bounds) return
-    const cx = bounds.x + bounds.width  / 2
-    const cy = bounds.y + bounds.height / 2
-    setCenter(cx, cy, { zoom: getZoom(), duration: 400 })
+    setCenter(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { zoom: getZoom(), duration: 400 })
+    setShowNavPopover(false)
   }
 
   function handleNameBlur() {
@@ -157,11 +218,8 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
 
   function handleAddEnd(id) {
     if (!id || endpointIds.has(id)) return
-    // 패널에서 수동 추가는 terminalNodeIds로 처리 (특정 간선 정보 불필요)
     const existing = group.terminalNodeIds ?? []
-    if (!existing.includes(id)) {
-      updateGroup(group.id, { terminalNodeIds: [...existing, id] })
-    }
+    if (!existing.includes(id)) updateGroup(group.id, { terminalNodeIds: [...existing, id] })
     setAddingEnd(false)
   }
 
@@ -180,49 +238,100 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
 
   function handleRemoveStart(id) {
     const newIds = startNodeIds.filter((x) => x !== id)
-    if (newIds.length === 0) {
-      removeGroup(group.id)
-    } else {
-      updateGroup(group.id, { startNodeIds: newIds })
-    }
+    if (newIds.length === 0) { removeGroup(group.id) } else { updateGroup(group.id, { startNodeIds: newIds }) }
   }
 
   return (
     <div className="border-b border-gray-50 last:border-0">
-      <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 group">
-        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-        {editingName ? (
-          <input
-            autoFocus
-            value={nameVal}
-            onChange={(e) => setNameVal(e.target.value)}
-            onBlur={handleNameBlur}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleNameBlur() }}
-            className="flex-1 text-sm font-semibold border-b border-blue-400 outline-none bg-transparent"
-          />
-        ) : (
+      {/* 헤더 행 */}
+      <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 group/row">
+
+        {/* 컬러 닷 (클릭 시 팔레트 팝업) */}
+        <div ref={colorPickerRef} className="relative shrink-0">
           <button
-            className="flex-1 text-left text-sm font-semibold text-gray-700 truncate"
-            onClick={handleFit}
-            onDoubleClick={() => setEditingName(true)}
-          >
-            {group.name}
-          </button>
-        )}
+            onClick={() => setShowColorPicker((v) => !v)}
+            className="w-2.5 h-2.5 rounded-full block"
+            style={{ backgroundColor: group.color }}
+            title="색상 변경"
+          />
+          {showColorPicker && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1.5 flex gap-1">
+              {GROUP_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  onMouseDown={() => { updateGroup(group.id, { color: c.value }); setShowColorPicker(false) }}
+                  style={{ backgroundColor: c.value }}
+                  className={`w-5 h-5 rounded-full transition-transform ${group.color === c.value ? 'ring-2 ring-offset-1 ring-gray-400 scale-110' : 'hover:scale-110'}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 그룹명 (클릭 → 이동 팝오버, 더블클릭 → 편집) */}
+        <div ref={navPopoverRef} className="flex-1 relative min-w-0">
+          {editingName ? (
+            <input
+              autoFocus
+              value={nameVal}
+              onChange={(e) => setNameVal(e.target.value)}
+              onBlur={handleNameBlur}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleNameBlur() }}
+              className="w-full text-sm font-semibold border-b border-blue-400 outline-none bg-transparent"
+            />
+          ) : (
+            <button
+              className="w-full text-left text-sm font-semibold text-gray-700 truncate"
+              onClick={() => setShowNavPopover((v) => !v)}
+              onDoubleClick={() => { setShowNavPopover(false); setEditingName(true) }}
+            >
+              {group.name}
+            </button>
+          )}
+
+          {/* 이동 팝오버 */}
+          {showNavPopover && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44">
+              <button
+                onClick={handleNavigateToStart}
+                className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              >
+                시작점으로 이동
+              </button>
+              <button
+                onClick={handleNavigateToEnd}
+                className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              >
+                {endpointIds.size > 0 ? '끝점으로 이동' : '가장 하위 노드로 이동'}
+              </button>
+              <button
+                onClick={handleNavigateToGroupBounds}
+                className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              >
+                그룹 전체 보기
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 펼치기/접기 */}
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-gray-300 hover:text-gray-500 text-xs"
+          className="text-gray-300 hover:text-gray-500 text-xs shrink-0"
         >
           {expanded ? '▲' : '▼'}
         </button>
+
+        {/* 삭제 */}
         <button
           onClick={onRemove}
-          className="text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+          className="text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
         >
           ×
         </button>
       </div>
 
+      {/* 상세 정보 (펼침 시) */}
       {expanded && (
         <div className="px-4 pb-2 space-y-1.5">
           {/* 시작점 목록 */}
@@ -232,25 +341,16 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
               {startNodeIds.map((id) => {
                 const exp = experiments.find((e) => e.id === id)
                 return (
-                  <span
-                    key={id}
-                    className="inline-flex items-center gap-1 bg-blue-50 rounded px-1.5 py-0.5 text-blue-700 font-mono text-xs"
-                  >
+                  <span key={id} className="inline-flex items-center gap-1 bg-blue-50 rounded px-1.5 py-0.5 text-blue-700 font-mono text-xs">
                     {id}
-                    {exp?.title && (
-                      <span className="font-sans text-blue-500 truncate max-w-[56px]">{exp.title}</span>
-                    )}
-                    <button
-                      onClick={() => handleRemoveStart(id)}
-                      className="text-blue-300 hover:text-red-400 ml-0.5 leading-none"
-                    >×</button>
+                    {exp?.title && <span className="font-sans text-blue-500 truncate max-w-[56px]">{exp.title}</span>}
+                    <button onClick={() => handleRemoveStart(id)} className="text-blue-300 hover:text-red-400 ml-0.5 leading-none">×</button>
                   </span>
                 )
               })}
             </div>
           </div>
 
-          {/* 시작점 추가 */}
           {addingStart ? (
             <ExperimentSearchInput
               experiments={experiments}
@@ -260,10 +360,7 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
               onChange={(id) => handleAddStart(id)}
             />
           ) : (
-            <button
-              onClick={() => setAddingStart(true)}
-              className="text-xs text-blue-400 hover:text-blue-600"
-            >
+            <button onClick={() => setAddingStart(true)} className="text-xs text-blue-400 hover:text-blue-600">
               + 시작점 추가
             </button>
           )}
@@ -285,14 +382,9 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
                       title={isTerminal ? '말단 노드 — 후속 실험 연결 시에도 차단 유지' : undefined}
                     >
                       {id}
-                      {exp?.title && (
-                        <span className="font-sans text-gray-500 truncate max-w-[56px]">{exp.title}</span>
-                      )}
+                      {exp?.title && <span className="font-sans text-gray-500 truncate max-w-[56px]">{exp.title}</span>}
                       {isTerminal && <span className="text-gray-400 font-sans">●</span>}
-                      <button
-                        onClick={() => handleRemoveEndpoint(id)}
-                        className="text-gray-300 hover:text-red-400 ml-0.5 leading-none"
-                      >×</button>
+                      <button onClick={() => handleRemoveEndpoint(id)} className="text-gray-300 hover:text-red-400 ml-0.5 leading-none">×</button>
                     </span>
                   )
                 })}
@@ -300,7 +392,6 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
             )}
           </div>
 
-          {/* 끝점 추가 */}
           {addingEnd ? (
             <ExperimentSearchInput
               experiments={experiments}
@@ -310,10 +401,7 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
               onChange={(id) => handleAddEnd(id)}
             />
           ) : (
-            <button
-              onClick={() => setAddingEnd(true)}
-              className="text-xs text-blue-400 hover:text-blue-600"
-            >
+            <button onClick={() => setAddingEnd(true)} className="text-xs text-blue-400 hover:text-blue-600">
               + 끝점 추가
             </button>
           )}
@@ -325,7 +413,8 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
   )
 }
 
-export default function GroupListPanel({ experiments, allNodes, setCenter, getZoom }) {
+// ── 그룹 목록 패널 ────────────────────────────────────────────
+export default function GroupListPanel({ experiments, allNodes, setCenter, getZoom, getFullExperiments }) {
   const { groups, addGroup, removeGroup } = useGraphGroups()
   const [collapsed, setCollapsed] = useState(false)
   const [showForm,  setShowForm]  = useState(false)
@@ -364,7 +453,6 @@ export default function GroupListPanel({ experiments, allNodes, setCenter, getZo
         </div>
       </div>
 
-      {/* 새 그룹 폼 */}
       {showForm && (
         <NewGroupForm
           experiments={experiments}
@@ -373,12 +461,9 @@ export default function GroupListPanel({ experiments, allNodes, setCenter, getZo
         />
       )}
 
-      {/* 그룹 목록 */}
       <div className="overflow-y-auto flex-1">
         {groups.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-gray-300 text-center">
-            그룹 없음
-          </div>
+          <div className="px-3 py-4 text-xs text-gray-300 text-center">그룹 없음</div>
         ) : (
           groups.map((g) => (
             <GroupItem
@@ -389,6 +474,7 @@ export default function GroupListPanel({ experiments, allNodes, setCenter, getZo
               setCenter={setCenter}
               getZoom={getZoom}
               onRemove={() => removeGroup(g.id)}
+              getFullExperiments={getFullExperiments}
             />
           ))
         )}
