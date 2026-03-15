@@ -61,10 +61,9 @@ export function experimentsToNodes(experiments) {
   })
 }
 
-export function experimentsToEdges(experiments, layoutDirection = 'LR') {
+export function experimentsToEdges(experiments) {
   const seen = new Set()
   const edges = []
-  const edgeType = layoutDirection === 'LR' ? 'straight' : 'smoothstep'
 
   for (const exp of experiments) {
     for (const precedingId of exp.connections?.precedingExperiments ?? []) {
@@ -75,7 +74,7 @@ export function experimentsToEdges(experiments, layoutDirection = 'LR') {
         id: edgeId,
         source: precedingId,
         target: exp.id,
-        type: edgeType,
+        type: 'smoothstep',
         markerEnd: { type: 'arrowclosed' },
       })
     }

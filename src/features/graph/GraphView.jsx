@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, useReducer } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactFlow, {
   Background, Controls,
@@ -62,7 +62,7 @@ export default function GraphView() {
       ...n,
       data: { ...n.data, layoutDirection: dir },
     }))
-    const rawEdges = experimentsToEdges(fullList, dir)
+    const rawEdges = experimentsToEdges(fullList)
     const laidOut  = applyDagreLayout(rawNodes, rawEdges, dir)
 
     setNodes(annotateGroupMarkers(laidOut))
@@ -82,6 +82,24 @@ export default function GraphView() {
     Promise.all(experiments.map((e) => getExperiment(e.id).then((full) => full ?? e)))
       .then((fullList) => {
         const map = Object.fromEntries(fullList.map((e) => [e.id, e]))
+        // followingExperiments 역산: Drive에는 precedingExperiments만 저장되므로
+        // 로드 후 precedingExperiments를 뒤집어 followingExperiments를 재구성
+        for (const exp of fullList) {
+          for (const precId of exp.connections?.precedingExperiments ?? []) {
+            const src = map[precId]
+            if (!src) continue
+            const prev = src.connections?.followingExperiments ?? []
+            if (!prev.includes(exp.id)) {
+              map[precId] = {
+                ...src,
+                connections: {
+                  ...(src.connections ?? {}),
+                  followingExperiments: [...prev, exp.id],
+                },
+              }
+            }
+          }
+        }
         fullDataRef.current = map
         rebuildLayout(map, layoutDirRef.current)
       })
