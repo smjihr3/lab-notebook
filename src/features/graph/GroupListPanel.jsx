@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useGraphGroups } from './GraphGroupProvider'
-import { generateGroupId, resolveGroupNodeIds, getGroupBounds, GROUP_COLORS } from './graphGroups'
+import { generateGroupId, resolveGroupNodeIds, getGroupBounds, getGroupEndpointNodeIds, GROUP_COLORS } from './graphGroups'
 
 function ExperimentSearchInput({ experiments, excludeIds = [], placeholder, value, onChange }) {
   const [query, setQuery] = useState('')
@@ -72,7 +72,8 @@ function NewGroupForm({ experiments, onSubmit, onCancel }) {
       name: name.trim(),
       color,
       startNodeIds: [startId],
-      endNodeIds: endId ? [endId] : [],
+      blockedEdges: [],
+      terminalNodeIds: endId ? [endId] : [],
     })
   }
 
@@ -133,10 +134,10 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
   const [addingEnd, setAddingEnd]     = useState(false)
   const [addingStart, setAddingStart] = useState(false)
 
-  const startNodeIds = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
-  const endNodeIds   = group.endNodeIds   ?? []
-  const nodeIds      = resolveGroupNodeIds(group, experiments)
-  const excludeIds   = [...startNodeIds, ...endNodeIds]
+  const startNodeIds  = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
+  const endpointIds   = getGroupEndpointNodeIds(group)      // Set
+  const nodeIds       = resolveGroupNodeIds(group, experiments)
+  const excludeIds    = [...startNodeIds, ...endpointIds]
 
   function handleFit() {
     const bounds = getGroupBounds(nodeIds, allNodes)
@@ -152,13 +153,20 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
   }
 
   function handleAddEnd(id) {
-    if (!id || endNodeIds.includes(id)) return
-    updateGroup(group.id, { endNodeIds: [...endNodeIds, id] })
+    if (!id || endpointIds.has(id)) return
+    // 패널에서 수동 추가는 terminalNodeIds로 처리 (특정 간선 정보 불필요)
+    const existing = group.terminalNodeIds ?? []
+    if (!existing.includes(id)) {
+      updateGroup(group.id, { terminalNodeIds: [...existing, id] })
+    }
     setAddingEnd(false)
   }
 
-  function handleRemoveEnd(id) {
-    updateGroup(group.id, { endNodeIds: endNodeIds.filter((x) => x !== id) })
+  function handleRemoveEndpoint(id) {
+    updateGroup(group.id, {
+      blockedEdges:    (group.blockedEdges    ?? []).filter((e) => e.from !== id),
+      terminalNodeIds: (group.terminalNodeIds ?? []).filter((x) => x !== id),
+    })
   }
 
   function handleAddStart(id) {
@@ -260,23 +268,26 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
           {/* 끝점 목록 */}
           <div className="text-xs text-gray-400">
             <div className="mb-0.5">끝점:</div>
-            {endNodeIds.length === 0 ? (
+            {endpointIds.size === 0 ? (
               <span className="text-gray-300 italic">열린 그룹</span>
             ) : (
               <div className="flex flex-wrap gap-1 mt-0.5">
-                {endNodeIds.map((id) => {
+                {[...endpointIds].map((id) => {
                   const exp = experiments.find((e) => e.id === id)
+                  const isTerminal = (group.terminalNodeIds ?? []).includes(id)
                   return (
                     <span
                       key={id}
                       className="inline-flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5 text-gray-600 font-mono text-xs"
+                      title={isTerminal ? '말단 노드 — 후속 실험 연결 시에도 차단 유지' : undefined}
                     >
                       {id}
                       {exp?.title && (
                         <span className="font-sans text-gray-500 truncate max-w-[56px]">{exp.title}</span>
                       )}
+                      {isTerminal && <span className="text-gray-400 font-sans">●</span>}
                       <button
-                        onClick={() => handleRemoveEnd(id)}
+                        onClick={() => handleRemoveEndpoint(id)}
                         className="text-gray-300 hover:text-red-400 ml-0.5 leading-none"
                       >×</button>
                     </span>

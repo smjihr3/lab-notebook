@@ -14,7 +14,9 @@ export const GROUP_COLORS = [
 /**
  * 구 스키마 → 신 스키마 변환:
  *   startNodeId  → startNodeIds: string[]
- *   endNodeId    → endNodeIds:   string[]
+ *   endNodeId    → endNodeIds:   string[]  (legacy: GraphView에서 blockedEdges/terminalNodeIds로 변환)
+ *   (신규) blockedEdges: Array<{ from, to }>  기본 []
+ *   (신규) terminalNodeIds: string[]          기본 []
  */
 export function migrateGroup(group) {
   const g = { ...group }
@@ -24,6 +26,8 @@ export function migrateGroup(group) {
   if (!('endNodeIds' in g)) {
     g.endNodeIds = g.endNodeId ? [g.endNodeId] : []
   }
+  if (!('blockedEdges' in g))    g.blockedEdges    = []
+  if (!('terminalNodeIds' in g)) g.terminalNodeIds = []
   return g
 }
 
@@ -31,21 +35,60 @@ export function migrateGroups(groups) {
   return groups.map(migrateGroup)
 }
 
+/**
+ * 구형 endNodeIds → blockedEdges / terminalNodeIds 변환.
+ * 실험 데이터(experimentMap)가 필요하므로 GraphView 로드 시점에 호출.
+ * 마이그레이션이 불필요한 경우 null 반환.
+ * @returns {{ blockedEdges, terminalNodeIds, endNodeIds } | null}
+ */
+export function migrateGroupEndNodes(group, experimentMap) {
+  if (!group.endNodeIds?.length) return null
+
+  const newBlockedEdges    = [...(group.blockedEdges    ?? [])]
+  const newTerminalNodeIds = [...(group.terminalNodeIds ?? [])]
+
+  for (const endId of group.endNodeIds) {
+    const endExp   = experimentMap[endId]
+    const followers = endExp?.connections?.followingExperiments ?? []
+    if (followers.length > 0) {
+      for (const followerId of followers) {
+        if (!newBlockedEdges.some((e) => e.from === endId && e.to === followerId)) {
+          newBlockedEdges.push({ from: endId, to: followerId })
+        }
+      }
+    } else {
+      if (!newTerminalNodeIds.includes(endId)) {
+        newTerminalNodeIds.push(endId)
+      }
+    }
+  }
+
+  return { blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: [] }
+}
+
 // ── 유틸 함수 ──────────────────────────────────────────────────
 
 /**
- * 각 startNodeIds에서 followingExperiments를 따라 BFS 탐색.
+ * BFS 탐색. startNodeIds 큐에서 시작하여:
+ * - terminalNodeIds에 해당하는 노드: 포함하되 자식 탐색 중단
+ * - blockedEdges { from, to } 에 해당하는 간선: 건너뜀
  *
- * endNodeIds: 해당 노드는 result에 추가하되 자식 탐색 중단 (닫힘).
- *             빈 배열이면 열린 그룹 (모든 하위 탐색).
+ * 구형 endNodeIds 호환: 있으면 terminalNodeIds로 간주.
  *
  * @returns {Set<string>}
  */
 export function resolveGroupNodeIds(group, experiments) {
   const expMap   = Object.fromEntries(experiments.map((e) => [e.id, e]))
-  const endSet   = new Set(group.endNodeIds ?? (group.endNodeId ? [group.endNodeId] : []))
-  // 구 스키마(startNodeId) 호환
   const startIds = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
+
+  const blockedEdges    = group.blockedEdges    ?? []
+  const blockedSet      = new Set(blockedEdges.map((e) => `${e.from}→${e.to}`))
+  const terminalSet     = new Set(group.terminalNodeIds ?? [])
+
+  // 구형 endNodeIds 호환 (미마이그레이션 데이터)
+  for (const id of (group.endNodeIds ?? (group.endNodeId ? [group.endNodeId] : []))) {
+    terminalSet.add(id)
+  }
 
   const result = new Set()
   const fq = [...startIds]
@@ -54,16 +97,43 @@ export function resolveGroupNodeIds(group, experiments) {
     const id = fq.shift()
     if (result.has(id)) continue
     result.add(id)
-    // endNodeIds 도달: result에 추가(확인) 후 자식 탐색 중단
-    if (endSet.size > 0 && endSet.has(id)) continue
+    // terminalNodeIds: 포함하되 자식 탐색 중단
+    if (terminalSet.has(id)) continue
     const exp = expMap[id]
     if (!exp) continue
     for (const nid of exp.connections?.followingExperiments ?? []) {
-      if (!result.has(nid)) fq.push(nid)
+      if (result.has(nid)) continue
+      // blockedEdges: 해당 간선 건너뜀
+      if (blockedSet.has(`${id}→${nid}`)) continue
+      fq.push(nid)
     }
   }
 
   return result
+}
+
+/**
+ * 그룹의 끝점 노드 ID Set 반환.
+ * blockedEdges의 from 측 노드 + terminalNodeIds 합산.
+ * @returns {Set<string>}
+ */
+export function getGroupEndpointNodeIds(group) {
+  const endpoints = new Set()
+  for (const edge of group.blockedEdges ?? []) endpoints.add(edge.from)
+  for (const id   of group.terminalNodeIds ?? []) endpoints.add(id)
+  // 구형 endNodeIds 호환
+  for (const id   of group.endNodeIds ?? []) endpoints.add(id)
+  return endpoints
+}
+
+/**
+ * 해당 노드가 그룹의 끝점인지 여부.
+ */
+export function isGroupEndpoint(group, nodeId) {
+  if ((group.blockedEdges    ?? []).some((e) => e.from === nodeId)) return true
+  if ((group.terminalNodeIds ?? []).includes(nodeId))               return true
+  if ((group.endNodeIds      ?? []).includes(nodeId))               return true  // 구형 호환
+  return false
 }
 
 /**

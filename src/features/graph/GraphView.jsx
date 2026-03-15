@@ -15,7 +15,10 @@ import GraphContextMenu from './GraphContextMenu'
 import GraphSidePanel from './GraphSidePanel'
 import GroupListPanel from './GroupListPanel'
 import { useGraphGroups } from './GraphGroupProvider'
-import { resolveGroupNodeIds, getGroupBounds, generateGroupId, GROUP_COLORS } from './graphGroups'
+import {
+  resolveGroupNodeIds, getGroupBounds, generateGroupId, GROUP_COLORS,
+  getGroupEndpointNodeIds, migrateGroupEndNodes,
+} from './graphGroups'
 
 const nodeTypes = {
   experimentNode:  ExperimentNode,
@@ -43,16 +46,21 @@ export default function GraphView() {
   const [groupCreateTarget, setGroupCreateTarget] = useState('new') // 'new' | groupId
   const latestSelectionRef = useRef([])
 
-  const fullDataRef   = useRef({})
-  const layoutDirRef  = useRef('LR')
-  const rfInstanceRef = useRef(null)
+  const fullDataRef        = useRef({})
+  const layoutDirRef       = useRef('LR')
+  const rfInstanceRef      = useRef(null)
+  const groupsRef          = useRef(groups)
+  const migrationDoneRef   = useRef(false)
+  const experimentsLoadedRef = useRef(false)
+
+  useEffect(() => { groupsRef.current = groups }, [groups])
 
   useEffect(() => { layoutDirRef.current = layoutDir }, [layoutDir])
 
   // ── 그룹 핀 정보 부여 ─────────────────────────────────────────
   function annotateGroupMarkers(nodeList) {
     const startIds = new Set(groups.flatMap((g) => g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : [])))
-    const endIds   = new Set(groups.flatMap((g) => g.endNodeIds ?? []))
+    const endIds   = new Set(groups.flatMap((g) => [...getGroupEndpointNodeIds(g)]))
     return nodeList.map((n) => ({
       ...n,
       data: {
@@ -110,6 +118,16 @@ export default function GraphView() {
           }
         }
         fullDataRef.current = map
+        // 구형 endNodeIds → blockedEdges/terminalNodeIds 마이그레이션 (1회)
+        if (!migrationDoneRef.current) {
+          migrationDoneRef.current = true
+          for (const group of groupsRef.current) {
+            if (!group.endNodeIds?.length) continue
+            const migrated = migrateGroupEndNodes(group, map)
+            if (migrated) updateGroup(group.id, migrated)
+          }
+        }
+        experimentsLoadedRef.current = true
         rebuildLayout(map, layoutDirRef.current)
       })
       .catch(console.error)
@@ -220,14 +238,23 @@ export default function GraphView() {
       return (exp?.connections?.precedingExperiments ?? []).every((id) => !selectedIds.has(id))
     })
 
-    // 리프: 선택 범위 내에 후속 실험이 없는 노드
-    const leaves = selectedForGroup.filter((n) => {
-      const exp = fullDataRef.current[n.id]
-      return (exp?.connections?.followingExperiments ?? []).every((id) => !selectedIds.has(id))
-    })
-
     const startNodeIds = roots.length > 0 ? roots.map((n) => n.id) : [selectedForGroup[0].id]
-    const endNodeIds   = leaves.map((n) => n.id)
+
+    // blockedEdges: 선택 범위 밖으로 나가는 간선 차단
+    const blockedEdges = []
+    for (const node of selectedForGroup) {
+      const exp = fullDataRef.current[node.id]
+      for (const followerId of exp?.connections?.followingExperiments ?? []) {
+        if (!selectedIds.has(followerId)) {
+          blockedEdges.push({ from: node.id, to: followerId })
+        }
+      }
+    }
+
+    // terminalNodeIds: 선택 범위 내에 후속 실험이 아예 없는 말단 노드
+    const terminalNodeIds = selectedForGroup
+      .filter((n) => (fullDataRef.current[n.id]?.connections?.followingExperiments ?? []).length === 0)
+      .map((n) => n.id)
 
     if (groupCreateTarget === 'new') {
       if (!groupCreateName.trim()) return
@@ -236,10 +263,11 @@ export default function GraphView() {
         name: groupCreateName.trim(),
         color: groupCreateColor,
         startNodeIds,
-        endNodeIds,
+        blockedEdges,
+        terminalNodeIds,
       })
     } else {
-      updateGroup(groupCreateTarget, { startNodeIds, endNodeIds })
+      updateGroup(groupCreateTarget, { startNodeIds, blockedEdges, terminalNodeIds })
     }
 
     setGroupCreatePopup(false)
@@ -316,72 +344,52 @@ export default function GraphView() {
     const group = groups.find((g) => g.id === groupId)
     if (!group) return
 
-    const fullList = Object.values(fullDataRef.current)
+    const fullList       = Object.values(fullDataRef.current)
     const currentNodeIds = resolveGroupNodeIds(group, fullList)
+    const startNodeIds   = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
+    const expX           = fullDataRef.current[experimentId]
+    const followers      = expX?.connections?.followingExperiments ?? []
 
-    const startNodeIds = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
-    let endNodeIds = [...(group.endNodeIds ?? [])]
+    let blockedEdges    = [...(group.blockedEdges    ?? [])]
+    let terminalNodeIds = [...(group.terminalNodeIds ?? [])]
 
-    // BFS: X에서 followingExperiments를 따라 도달 가능한 모든 노드
-    function reachableFrom(startId) {
-      const visited = new Set()
-      const queue = [startId]
-      while (queue.length > 0) {
-        const id = queue.shift()
-        if (visited.has(id)) continue
-        visited.add(id)
-        const exp = fullDataRef.current[id]
-        for (const nid of exp?.connections?.followingExperiments ?? []) {
-          if (!visited.has(nid)) queue.push(nid)
+    // Case 1: X가 startNodeIds에 포함된 경우 → X 이후를 차단
+    if (startNodeIds.includes(experimentId)) {
+      if (followers.length > 0) {
+        // followingExperiments가 있으면 각각 blockedEdges에 추가
+        for (const followerId of followers) {
+          if (!blockedEdges.some((e) => e.from === experimentId && e.to === followerId)) {
+            blockedEdges.push({ from: experimentId, to: followerId })
+          }
+        }
+      } else {
+        // 말단 노드 → terminalNodeIds에 추가 (미래 연결도 차단)
+        if (!terminalNodeIds.includes(experimentId)) {
+          terminalNodeIds.push(experimentId)
         }
       }
-      return visited
-    }
-
-    const reachableFromX = reachableFrom(experimentId)
-
-    // Case 1: X가 startNodeIds에 포함된 경우
-    if (startNodeIds.includes(experimentId)) {
-      // X를 endNodeIds에 추가 (그룹에는 포함되되 이후 경로 차단)
-      if (!endNodeIds.includes(experimentId)) endNodeIds.push(experimentId)
-      // X에서 도달 가능한 노드 중 endNodeIds에 포함된 것 제거 (X 자신 제외)
-      endNodeIds = endNodeIds.filter((id) => id === experimentId || !reachableFromX.has(id))
-      updateGroup(groupId, { endNodeIds })
+      updateGroup(groupId, { blockedEdges, terminalNodeIds })
       return
     }
 
     // Step 2: 그룹 내 부모 파악
-    const expX = fullDataRef.current[experimentId]
     const groupParents = (expX?.connections?.precedingExperiments ?? [])
       .filter((id) => currentNodeIds.has(id))
-
     if (groupParents.length === 0) return
 
-    // Step 3: 분기 여부 판단 — 그룹 내 부모 중 그룹 내 자식이 2개 이상인 것이 있으면 분기
-    const branchingParents = groupParents.filter((parentId) => {
-      const parentExp = fullDataRef.current[parentId]
-      const childrenInGroup = (parentExp?.connections?.followingExperiments ?? [])
-        .filter((id) => currentNodeIds.has(id))
-      return childrenInGroup.length >= 2
-    })
-    const isBranchFirst = branchingParents.length > 0
-
-    // X에서 도달 가능한 노드 중 endNodeIds에 포함된 것 제거 (X 자신 제외)
-    endNodeIds = endNodeIds.filter((id) => id === experimentId || !reachableFromX.has(id))
-
-    if (isBranchFirst) {
-      // 4-A: 분기 부모를 endNodeIds에 추가 (없으면) → 부모까지만 그룹에 포함
-      for (const parentId of branchingParents) {
-        if (!endNodeIds.includes(parentId)) endNodeIds.push(parentId)
-      }
-    } else {
-      // 4-B: 단일 경로 — 그룹 내 부모 전체를 endNodeIds에 추가
-      for (const parentId of groupParents) {
-        if (!endNodeIds.includes(parentId)) endNodeIds.push(parentId)
+    // Step 3: 그룹 내 부모 → X 간선을 blockedEdges에 추가
+    for (const parentId of groupParents) {
+      if (!blockedEdges.some((e) => e.from === parentId && e.to === experimentId)) {
+        blockedEdges.push({ from: parentId, to: experimentId })
       }
     }
 
-    updateGroup(groupId, { endNodeIds })
+    // Step 4: X 자체가 가지고 있던 blockedEdges/terminalNodeIds 제거
+    //         (X가 그룹에서 잘려나갔으므로 X 이후 차단 정보 불필요)
+    blockedEdges    = blockedEdges.filter((e) => e.from !== experimentId)
+    terminalNodeIds = terminalNodeIds.filter((id) => id !== experimentId)
+
+    updateGroup(groupId, { blockedEdges, terminalNodeIds })
   }
 
   // ── Outcome 선택 ──────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useGraphGroups } from './GraphGroupProvider'
-import { generateGroupId, GROUP_COLORS, resolveGroupNodeIds } from './graphGroups'
+import { generateGroupId, GROUP_COLORS, resolveGroupNodeIds, isGroupEndpoint } from './graphGroups'
 
 const MENU_WIDTH = 200
 
@@ -30,16 +30,19 @@ export default function GraphContextMenu({
 
   const getStartIds = (g) => g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : [])
 
-  const groupsWithThisStart = groups.filter((g) => getStartIds(g).includes(experiment.id))
-  const isStart              = groupsWithThisStart.length > 0
-  const isEnd                = groups.some((g) => (g.endNodeIds ?? []).includes(experiment.id))
-  const eligibleGroups       = groups.filter((g) => !(g.endNodeIds ?? []).includes(experiment.id))
-  const groupsWithThisEnd    = groups.filter((g) => (g.endNodeIds ?? []).includes(experiment.id))
-  const eligibleStartGroups  = groups.filter((g) => !getStartIds(g).includes(experiment.id))
-  // 이 노드가 BFS 결과에 포함된 그룹
-  const groupsContainingNode = groups.filter((g) =>
+  const groupsWithThisStart  = groups.filter((g) => getStartIds(g).includes(experiment.id))
+  const isStart               = groupsWithThisStart.length > 0
+  const isEnd                 = groups.some((g) => isGroupEndpoint(g, experiment.id))
+  const eligibleGroups        = groups.filter((g) => !isGroupEndpoint(g, experiment.id))
+  const groupsWithThisEnd     = groups.filter((g) => isGroupEndpoint(g, experiment.id))
+  const eligibleStartGroups   = groups.filter((g) => !getStartIds(g).includes(experiment.id))
+  const groupsContainingNode  = groups.filter((g) =>
     resolveGroupNodeIds(g, experiments ?? []).has(experiment.id)
   )
+
+  // 실험의 followingExperiments (fullDataRef에서 재구성된 데이터 사용)
+  const expFull     = (experiments ?? []).find((e) => e.id === experiment.id) ?? experiment
+  const followers   = expFull.connections?.followingExperiments ?? []
 
   function handleAddGroup() {
     if (!newGroupName.trim()) return
@@ -48,25 +51,42 @@ export default function GraphContextMenu({
       name: newGroupName.trim(),
       color: newGroupColor,
       startNodeIds: [experiment.id],
-      endNodeIds: [],
+      blockedEdges: [],
+      terminalNodeIds: [],
     })
     onClose()
   }
 
+  // 끝점 지정: followingExperiments 유무에 따라 blockedEdges / terminalNodeIds 분기
   function handleSetEnd(groupId) {
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
-    const existing = g.endNodeIds ?? []
-    if (!existing.includes(experiment.id)) {
-      updateGroup(groupId, { endNodeIds: [...existing, experiment.id] })
+    if (followers.length > 0) {
+      const existing = g.blockedEdges ?? []
+      const newEdges = [...existing]
+      for (const followerId of followers) {
+        if (!newEdges.some((e) => e.from === experiment.id && e.to === followerId)) {
+          newEdges.push({ from: experiment.id, to: followerId })
+        }
+      }
+      updateGroup(groupId, { blockedEdges: newEdges })
+    } else {
+      const existing = g.terminalNodeIds ?? []
+      if (!existing.includes(experiment.id)) {
+        updateGroup(groupId, { terminalNodeIds: [...existing, experiment.id] })
+      }
     }
     onClose()
   }
 
+  // 끝점 해제: blockedEdges(from === X) 전부 제거 + terminalNodeIds에서 제거
   function handleUnsetEnd(groupId) {
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
-    updateGroup(groupId, { endNodeIds: (g.endNodeIds ?? []).filter((x) => x !== experiment.id) })
+    updateGroup(groupId, {
+      blockedEdges:    (g.blockedEdges    ?? []).filter((e) => e.from !== experiment.id),
+      terminalNodeIds: (g.terminalNodeIds ?? []).filter((id) => id !== experiment.id),
+    })
     onClose()
   }
 
@@ -197,9 +217,11 @@ export default function GraphContextMenu({
                 key={g.id}
                 onClick={() => handleSetEnd(g.id)}
                 className="w-full text-left flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-gray-50"
+                title={followers.length === 0 ? '후속 실험 연결 시에도 이 노드에서 차단됩니다' : undefined}
               >
                 <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
                 <span className="truncate">{g.name}</span>
+                {followers.length === 0 && <span className="text-gray-300 text-xs ml-auto shrink-0">말단</span>}
               </button>
             ))}
             <button onClick={() => setSubMode(null)} className="text-xs text-gray-400 hover:text-gray-600 mt-1">취소</button>
