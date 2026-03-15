@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useAuth } from './store/authStore'
 import Sidebar from './components/Sidebar'
+import LoginPage from './pages/LoginPage'
 import {
   DashboardPage,
   ExperimentsPage,
@@ -12,7 +14,11 @@ import {
   SettingsPage,
 } from './pages'
 
-export default function App() {
+function AppShell() {
+  const { isLoggedIn } = useAuth()
+
+  if (!isLoggedIn) return <LoginPage />
+
   return (
     <BrowserRouter>
       <div className="flex h-screen bg-gray-50">
@@ -33,4 +39,8 @@ export default function App() {
       </div>
     </BrowserRouter>
   )
+}
+
+export default function App() {
+  return <AppShell />
 }
