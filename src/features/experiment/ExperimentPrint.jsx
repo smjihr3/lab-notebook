@@ -261,6 +261,19 @@ export default function ExperimentPrint({ experiment, accessToken, printOption, 
             <div style={{ fontFamily: 'monospace', fontSize: '8pt', color: '#888' }}>
               {experiment.id}
             </div>
+            {(() => {
+              const precedingIds = experiment.connections?.precedingExperiments ?? []
+              if (precedingIds.length === 0) return null
+              const labels = precedingIds.map((pid) => {
+                const linked = allExperiments?.find((e) => e.id === pid)
+                return linked?.title ? `${pid} ${linked.title}` : pid
+              })
+              return (
+                <div className="epp-preceding">
+                  선행 실험: {labels.join(', ')}
+                </div>
+              )
+            })()}
             <div style={{ fontWeight: 700, fontSize: '11pt' }}>{experiment.title}</div>
           </div>
           <div className="epp-meta-right">
@@ -270,20 +283,6 @@ export default function ExperimentPrint({ experiment, accessToken, printOption, 
         </div>
 
         <div className="epp-section-label">실험 계획</div>
-
-        {(() => {
-          const precedingIds = experiment.connections?.precedingExperiments ?? []
-          if (precedingIds.length === 0) return null
-          const labels = precedingIds.map((pid) => {
-            const linked = allExperiments?.find((e) => e.id === pid)
-            return linked?.title ? `${pid} ${linked.title}` : pid
-          })
-          return (
-            <div className="epp-preceding">
-              선행 실험: {labels.join(', ')}
-            </div>
-          )
-        })()}
 
         {experiment.goal && (
           <div className="epp-field">
