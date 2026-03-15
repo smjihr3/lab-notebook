@@ -3,7 +3,8 @@
     "allow": [
       "Bash(cd:*)",
       "Bash(ls:*)",
-      "Bash(for f:*)"
+      "Bash(for f:*)",
+      "Bash(node:*)"
     ]
   }
 }
