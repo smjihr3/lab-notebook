@@ -325,7 +325,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
           >
             {/* 이미지 영역 (이미지가 있을 때만 표시) */}
             {block.items.length > 0 && (
-              <div className="p-2 flex flex-wrap gap-2">
+              <div className="p-2 flex flex-wrap gap-2 w-fit self-start">
                 {block.items.map((item) => (
                   <div key={item.id} className="relative group w-fit">
                     <DriveImage
