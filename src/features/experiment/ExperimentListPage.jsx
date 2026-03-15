@@ -294,6 +294,7 @@ export default function ExperimentListPage() {
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5">
                     {exp.createdAt ? new Date(exp.createdAt).toLocaleDateString('ko-KR') : ''}
+                    <span className="font-mono text-gray-300 ml-2">{exp.id}</span>
                   </p>
                   {exp.tags?.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">

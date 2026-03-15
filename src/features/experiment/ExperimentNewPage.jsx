@@ -2,13 +2,36 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useExperiments } from '../../store/experimentStore'
 
-function generateExpId(count) {
+function generateExpId(experiments) {
   const now = new Date()
   const yy = String(now.getFullYear()).slice(2)
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
-  const nnn = String(count + 1).padStart(3, '0')
-  return `${yy}${mm}${dd}-${nnn}`
+  const todayPrefix = `${yy}${mm}${dd}`
+
+  let maxNum = 0
+  for (const exp of experiments) {
+    const newFmt = exp.id.match(/^(\d{6})-(\d{3})$/)
+    if (newFmt && newFmt[1] === todayPrefix) {
+      maxNum = Math.max(maxNum, parseInt(newFmt[2], 10))
+      continue
+    }
+    const oldFmt = exp.id.match(/^exp_(\d{6})_(\d{3})$/)
+    if (oldFmt && oldFmt[1] === todayPrefix) {
+      maxNum = Math.max(maxNum, parseInt(oldFmt[2], 10))
+    }
+  }
+
+  return `${todayPrefix}-${String(maxNum + 1).padStart(3, '0')}`
+}
+
+function generateTitle(experiments) {
+  const base = '새 실험 노트'
+  const titles = new Set(experiments.map((e) => e.title))
+  if (!titles.has(base)) return base
+  let n = 2
+  while (titles.has(`${base} (${n})`)) n++
+  return `${base} (${n})`
 }
 
 export default function ExperimentNewPage() {
@@ -24,9 +47,9 @@ export default function ExperimentNewPage() {
     didCreate.current = true
 
     const newExp = {
-      id: generateExpId(experiments.length),
+      id: generateExpId(experiments),
       projectId: null,
-      title: '새 실험 노트',
+      title: generateTitle(experiments),
       createdAt: new Date().toISOString(),
       dataReceivedAt: null,
       status: 'in_progress',
