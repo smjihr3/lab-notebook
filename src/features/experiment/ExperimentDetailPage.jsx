@@ -7,6 +7,80 @@ import { useAuth } from '../../store/authStore.jsx'
 import { useDrive } from '../../store/driveStore'
 import { getAllExperiments, saveExperiment, deleteExperiment } from '../../services/drive/driveService'
 
+// ── Excel/HTML 표 파싱 헬퍼 ───────────────────────────────────
+
+function parseInlineNodes(el) {
+  const nodes = []
+  for (const child of el.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      if (child.textContent) nodes.push({ type: 'text', text: child.textContent })
+      continue
+    }
+    if (child.nodeType !== Node.ELEMENT_NODE) continue
+
+    const tag = child.tagName.toLowerCase()
+    if (tag === 'br') { nodes.push({ type: 'hardBreak' }); continue }
+
+    const inner = parseInlineNodes(child)
+    const fw = child.style?.fontWeight ?? ''
+    const isBold = tag === 'strong' || tag === 'b' || fw === 'bold' || parseInt(fw) >= 600
+    const isItalic = tag === 'em' || tag === 'i' || child.style?.fontStyle === 'italic'
+
+    if (isBold || isItalic) {
+      inner.forEach((n) => {
+        if (n.type !== 'text') { nodes.push(n); return }
+        const marks = [...(n.marks ?? [])]
+        if (isBold)   marks.push({ type: 'bold' })
+        if (isItalic) marks.push({ type: 'italic' })
+        nodes.push({ ...n, marks })
+      })
+    } else {
+      nodes.push(...inner)
+    }
+  }
+  return nodes
+}
+
+function cellToTiptapNode(td, colwidth, isHeader) {
+  const inlineContent = parseInlineNodes(td)
+  return {
+    type: isHeader ? 'tableHeader' : 'tableCell',
+    attrs: {
+      colspan:  parseInt(td.getAttribute('colspan')  ?? '1'),
+      rowspan:  parseInt(td.getAttribute('rowspan')  ?? '1'),
+      colwidth: colwidth ? [colwidth] : null,
+    },
+    content: [{
+      type: 'paragraph',
+      content: inlineContent.length > 0 ? inlineContent : undefined,
+    }],
+  }
+}
+
+function htmlTableToTiptap(tableEl) {
+  // colgroup → col widths
+  const colwidths = []
+  tableEl.querySelectorAll('colgroup col, col').forEach((col) => {
+    const raw = col.style?.width || col.getAttribute('width') || ''
+    const px = parseInt(raw)
+    colwidths.push(isNaN(px) ? null : px)
+  })
+
+  const rows = []
+  tableEl.querySelectorAll('tr').forEach((tr) => {
+    const cells = []
+    tr.querySelectorAll('td, th').forEach((td, ci) => {
+      const isHeader = td.tagName === 'TH' || !!td.closest('thead')
+      cells.push(cellToTiptapNode(td, colwidths[ci] ?? null, isHeader))
+    })
+    if (cells.length > 0) rows.push({ type: 'tableRow', content: cells })
+  })
+
+  return rows.length > 0 ? { type: 'table', content: rows } : null
+}
+
+// ── 상수 ─────────────────────────────────────────────────────
+
 const STATUS_OPTIONS = [
   { value: 'in_progress',  label: '진행중' },
   { value: 'data_pending', label: '데이터 대기' },
@@ -21,7 +95,8 @@ const STATUS_CLS = {
   completed:    'bg-green-100 text-green-700',
 }
 
-// 툴바 버튼 — onMouseDown + preventDefault 로 에디터 포커스 유지
+// ── 툴바 버튼 ─────────────────────────────────────────────────
+
 function TBtn({ onClick, title, children, active }) {
   return (
     <button
@@ -41,6 +116,8 @@ function Divider() {
   return <span className="w-px h-4 bg-gray-200 mx-0.5 self-center" />
 }
 
+// ── 컴포넌트 ──────────────────────────────────────────────────
+
 export default function ExperimentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -54,13 +131,13 @@ export default function ExperimentDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  const latestRef = useRef(null)
-  const saveTimerRef = useRef(null)
+  const latestRef      = useRef(null)
+  const saveTimerRef   = useRef(null)
   const accessTokenRef = useRef(accessToken)
-  const folderMapRef = useRef(folderMap)
+  const folderMapRef   = useRef(folderMap)
 
   useEffect(() => { accessTokenRef.current = accessToken }, [accessToken])
-  useEffect(() => { folderMapRef.current = folderMap }, [folderMap])
+  useEffect(() => { folderMapRef.current   = folderMap   }, [folderMap])
 
   // ── 디바운스 저장 ────────────────────────────────────────────
   const debouncedSave = useCallback((data) => {
@@ -97,12 +174,36 @@ export default function ExperimentDetailPage() {
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Table.configure({ resizable: false }),
+      Table.configure({ resizable: true }),
       TableRow,
       TableCell,
       TableHeader,
     ],
     content: '',
+    editorProps: {
+      handlePaste(view, event) {
+        const html = event.clipboardData?.getData('text/html')
+        if (!html) return false
+
+        const doc = new DOMParser().parseFromString(html, 'text/html')
+        const tableEl = doc.querySelector('table')
+        if (!tableEl) return false
+
+        const tableJson = htmlTableToTiptap(tableEl)
+        if (!tableJson) return false
+
+        try {
+          const node = view.state.schema.nodeFromJSON(tableJson)
+          const tr = view.state.tr.replaceSelectionWith(node)
+          view.dispatch(tr)
+          event.preventDefault()
+          return true
+        } catch (err) {
+          console.warn('Table paste failed, falling back to default:', err)
+          return false
+        }
+      },
+    },
     onUpdate: ({ editor }) => {
       const current = latestRef.current
       if (!current) return
@@ -176,8 +277,6 @@ export default function ExperimentDetailPage() {
     return <div className="p-6 text-sm text-gray-400">실험 노트를 찾을 수 없습니다.</div>
   }
 
-  const inTable = editor?.isActive('table') ?? false
-
   return (
     <div className="max-w-2xl mx-auto px-6 py-6">
 
@@ -202,7 +301,6 @@ export default function ExperimentDetailPage() {
             {saveStatus === 'saving' ? '저장 중...' : saveStatus === 'unsaved' ? '변경됨' : '저장됨'}
           </span>
 
-          {/* 삭제 버튼 */}
           {!showDeleteConfirm ? (
             <button
               onClick={() => setShowDeleteConfirm(true)}
@@ -262,9 +360,7 @@ export default function ExperimentDetailPage() {
 
       {/* 목표 */}
       <div className="mb-6">
-        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-          목표
-        </label>
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">목표</label>
         <textarea
           className="w-full text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-colors"
           rows={3}
@@ -276,9 +372,7 @@ export default function ExperimentDetailPage() {
 
       {/* 태그 */}
       <div className="mb-6">
-        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-          태그
-        </label>
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">태그</label>
         <div className="flex flex-wrap gap-1.5 mb-2">
           {experiment.tags?.map((tag) => (
             <span
@@ -305,57 +399,25 @@ export default function ExperimentDetailPage() {
 
       {/* 실험 절차 (Tiptap) */}
       <div className="mb-6">
-        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-          실험 절차
-        </label>
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">실험 절차</label>
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors">
 
           {/* 툴바 */}
           <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-100 bg-gray-50">
-            <TBtn onClick={() => editor?.chain().focus().toggleBold().run()} title="굵게" active={editor?.isActive('bold')}>
-              <strong>B</strong>
-            </TBtn>
-            <TBtn onClick={() => editor?.chain().focus().toggleItalic().run()} title="기울임" active={editor?.isActive('italic')}>
-              <em>I</em>
-            </TBtn>
-            <TBtn onClick={() => editor?.chain().focus().toggleStrike().run()} title="취소선" active={editor?.isActive('strike')}>
-              <s>S</s>
-            </TBtn>
+            <TBtn onClick={() => editor?.chain().focus().toggleBold().run()}    title="굵게"   active={editor?.isActive('bold')}><strong>B</strong></TBtn>
+            <TBtn onClick={() => editor?.chain().focus().toggleItalic().run()}  title="기울임" active={editor?.isActive('italic')}><em>I</em></TBtn>
+            <TBtn onClick={() => editor?.chain().focus().toggleStrike().run()}  title="취소선" active={editor?.isActive('strike')}><s>S</s></TBtn>
             <Divider />
             <TBtn onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} title="제목 1" active={editor?.isActive('heading', { level: 1 })}>H1</TBtn>
             <TBtn onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} title="제목 2" active={editor?.isActive('heading', { level: 2 })}>H2</TBtn>
             <Divider />
-            <TBtn onClick={() => editor?.chain().focus().toggleBulletList().run()} title="글머리 목록" active={editor?.isActive('bulletList')}>• 목록</TBtn>
-            <TBtn onClick={() => editor?.chain().focus().toggleOrderedList().run()} title="번호 목록" active={editor?.isActive('orderedList')}>1. 목록</TBtn>
+            <TBtn onClick={() => editor?.chain().focus().toggleBulletList().run()}   title="글머리 목록" active={editor?.isActive('bulletList')}>• 목록</TBtn>
+            <TBtn onClick={() => editor?.chain().focus().toggleOrderedList().run()}  title="번호 목록"  active={editor?.isActive('orderedList')}>1. 목록</TBtn>
             <Divider />
-            {/* 표 버튼 */}
-            <TBtn
-              onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-              title="표 삽입 (3×3)"
-            >
-              표 삽입
-            </TBtn>
-            <TBtn
-              onClick={() => editor?.chain().focus().addColumnAfter().run()}
-              title="열 추가"
-              active={false}
-            >
-              +열
-            </TBtn>
-            <TBtn
-              onClick={() => editor?.chain().focus().addRowAfter().run()}
-              title="행 추가"
-              active={false}
-            >
-              +행
-            </TBtn>
-            <TBtn
-              onClick={() => editor?.chain().focus().deleteTable().run()}
-              title="표 삭제"
-              active={false}
-            >
-              표 삭제
-            </TBtn>
+            <TBtn onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="표 삽입 (3×3)">표 삽입</TBtn>
+            <TBtn onClick={() => editor?.chain().focus().addColumnAfter().run()}  title="열 추가">+열</TBtn>
+            <TBtn onClick={() => editor?.chain().focus().addRowAfter().run()}     title="행 추가">+행</TBtn>
+            <TBtn onClick={() => editor?.chain().focus().deleteTable().run()}     title="표 삭제">표 삭제</TBtn>
           </div>
 
           {/* 에디터 본문 */}
@@ -368,13 +430,10 @@ export default function ExperimentDetailPage() {
               [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5
               [&_.ProseMirror_h1]:text-xl [&_.ProseMirror_h1]:font-bold [&_.ProseMirror_h1]:my-2
               [&_.ProseMirror_h2]:text-lg [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:my-1.5
-              [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-gray-300 [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:text-gray-500
-              [&_.ProseMirror_table]:border-collapse [&_.ProseMirror_table]:w-full [&_.ProseMirror_table]:my-2
-              [&_.ProseMirror_td]:border [&_.ProseMirror_td]:border-gray-300 [&_.ProseMirror_td]:px-2 [&_.ProseMirror_td]:py-1.5 [&_.ProseMirror_td]:min-w-8 [&_.ProseMirror_td]:align-top
-              [&_.ProseMirror_th]:border [&_.ProseMirror_th]:border-gray-300 [&_.ProseMirror_th]:px-2 [&_.ProseMirror_th]:py-1.5 [&_.ProseMirror_th]:bg-gray-50 [&_.ProseMirror_th]:font-semibold [&_.ProseMirror_th]:text-left
-              [&_.ProseMirror_.selectedCell]:bg-blue-50"
+              [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-gray-300 [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:text-gray-500"
           />
         </div>
+        <p className="text-xs text-gray-400 mt-1">엑셀에서 복사한 표를 그대로 붙여넣기 할 수 있습니다.</p>
       </div>
 
     </div>
