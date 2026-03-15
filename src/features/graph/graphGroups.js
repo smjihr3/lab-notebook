@@ -190,11 +190,10 @@ export function getGroupBounds(nodeIds, rfNodes, padding = 32) {
 }
 
 /**
- * 포함 노드들의 union of padded bounding boxes를 직각 다각형으로 반환.
- * 격자 기반 경계 추적으로 90도 꼭짓점만 가지는 외곽 polygon 계산.
- * @returns {{ points: Array<{x,y}>, bounds: {x,y,width,height} } | null}
+ * @deprecated GroupOverlay.jsx + computeGroupPolygon.js 로 대체됨.
+ * 하위 호환 유지를 위해 남겨두되 새 코드에서는 사용하지 않음.
  */
-export function getGroupPolygon(nodeIds, rfNodes, padding = 32) {
+function getGroupPolygon(nodeIds, rfNodes, padding = 32) {
   const relevant = rfNodes.filter(
     (n) => nodeIds.has(n.id) && !n.id.startsWith('group-bg-')
   )
