@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useState, useRef } from 'react'
+import { useParams, useNavigate, useBlocker } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
@@ -168,10 +168,9 @@ function AnalysisTypeBadge({ value, allTypes, onChange }) {
 // ── 데이터 블록 섹션 ─────────────────────────────────────────
 
 function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
-  const [localUrls, setLocalUrls] = useState({})   // itemId → blob URL
-  const [lightbox, setLightbox] = useState(null)   // resolved src string
+  const [localUrls, setLocalUrls] = useState({})
+  const [lightbox, setLightbox] = useState(null)
 
-  // 현재 사용 중인 analysisType 포함 전체 목록
   const allTypes = (() => {
     const extra = new Set()
     for (const b of blocks) {
@@ -233,7 +232,6 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
       const localUrl = URL.createObjectURL(file)
       setLocalUrls((prev) => ({ ...prev, [itemId]: localUrl }))
 
-      // 아이템을 즉시 추가 (optimistic)
       const newItem = {
         id: itemId,
         analysisType: 'PXRD',
@@ -247,7 +245,6 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         })
       )
 
-      // Drive 업로드
       try {
         const ext = file.type.split('/')[1] || 'png'
         const namedFile = new File([file], `${itemId}.${ext}`, { type: file.type })
@@ -313,7 +310,6 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
             key={block.id}
             className="border border-gray-200 rounded-xl bg-white overflow-hidden"
           >
-            {/* 블록 헤더 */}
             <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
               <input
                 className="flex-1 text-sm font-medium bg-transparent outline-none placeholder-gray-300 text-gray-700"
@@ -333,7 +329,6 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
               </button>
             </div>
 
-            {/* 이미지 영역 */}
             <div
               className="p-3"
               onPaste={(e) => handlePaste(e, block.id)}
@@ -356,7 +351,6 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                 <div className="flex gap-3 overflow-x-auto pb-2">
                   {block.items.map((item) => (
                     <div key={item.id} className="flex-shrink-0 flex flex-col gap-1.5">
-                      {/* 이미지 */}
                       <div className="relative group">
                         <DriveImage
                           fileId={item.driveFileId || null}
@@ -376,14 +370,12 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                         </button>
                       </div>
 
-                      {/* 분석 종류 배지 */}
                       <AnalysisTypeBadge
                         value={item.analysisType}
                         allTypes={allTypes}
                         onChange={(t) => updateItem(block.id, item.id, { analysisType: t })}
                       />
 
-                      {/* 캡션 */}
                       <input
                         className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:border-blue-400 w-full max-w-[160px] transition-colors"
                         value={item.caption}
@@ -393,7 +385,6 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                     </div>
                   ))}
 
-                  {/* 이미지 추가 버튼 (블록에 이미지가 있을 때) */}
                   <label className="flex-shrink-0 flex flex-col items-center justify-center gap-1 border-2 border-dashed border-gray-200 rounded-lg h-44 w-20 cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-gray-300">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -414,7 +405,6 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         ))}
       </div>
 
-      {/* 라이트박스 */}
       {lightbox && (
         <div
           className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4"
@@ -527,40 +517,42 @@ export default function ExperimentDetailPage() {
 
   const [experiment, setExperiment] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [saveStatus, setSaveStatus] = useState('saved')
+  const [isDirty, setIsDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  const latestRef      = useRef(null)
-  const saveTimerRef   = useRef(null)
+  const latestRef = useRef(null)
 
-  // ── 디바운스 저장 ────────────────────────────────────────────
-  const debouncedSave = useCallback((data) => {
-    setSaveStatus('unsaved')
-    clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(async () => {
-      setSaveStatus('saving')
-      try {
-        const saved = await updateExperiment(data)
-        latestRef.current = saved
-        setExperiment(saved)
-        setSaveStatus('saved')
-      } catch {
-        setSaveStatus('unsaved')
-      }
-    }, 2000)
-  }, [updateExperiment])
+  // ── 미저장 상태에서 이탈 차단 ────────────────────────────────
+  const blocker = useBlocker(isDirty)
 
-  // ── 필드 업데이트 ────────────────────────────────────────────
+  // ── 수동 저장 ────────────────────────────────────────────────
+  async function handleSave() {
+    if (!latestRef.current) return
+    setSaving(true)
+    try {
+      const saved = await updateExperiment(latestRef.current)
+      latestRef.current = saved
+      setExperiment(saved)
+      setIsDirty(false)
+    } catch (err) {
+      console.error('Save failed:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── 필드 업데이트 (로컬 state만 변경, 저장 없음) ─────────────
   function update(changes) {
     setExperiment((prev) => {
       if (!prev) return prev
       const next = { ...prev, ...changes }
       latestRef.current = next
-      debouncedSave(next)
       return next
     })
+    setIsDirty(true)
   }
 
   // ── Tiptap: 실험 절차 ────────────────────────────────────────
@@ -596,7 +588,7 @@ export default function ExperimentDetailPage() {
       }
       latestRef.current = next
       setExperiment(next)
-      debouncedSave(next)
+      setIsDirty(true)
     },
   })
 
@@ -610,7 +602,7 @@ export default function ExperimentDetailPage() {
       const next = { ...current, conclusion: editor.getJSON() }
       latestRef.current = next
       setExperiment(next)
-      debouncedSave(next)
+      setIsDirty(true)
     },
   })
 
@@ -618,6 +610,7 @@ export default function ExperimentDetailPage() {
   useEffect(() => {
     if (!isReady) return
     setLoading(true)
+    setIsDirty(false)
     getExperiment(id).then((found) => {
       if (found) {
         latestRef.current = found
@@ -626,17 +619,17 @@ export default function ExperimentDetailPage() {
     }).catch(console.error).finally(() => setLoading(false))
   }, [isReady, id])
 
-  // procedure 에디터에 내용 주입 (실험 로드 후 1회)
+  // procedure 에디터에 내용 주입 (초기 로드 1회, onUpdate 발생 안 함)
   useEffect(() => {
     if (procedureEditor && experiment?.procedure?.common && procedureEditor.isEmpty) {
-      procedureEditor.commands.setContent(experiment.procedure.common)
+      procedureEditor.commands.setContent(experiment.procedure.common, false)
     }
   }, [procedureEditor, experiment?.id])
 
-  // conclusion 에디터에 내용 주입 (실험 로드 후 1회)
+  // conclusion 에디터에 내용 주입 (초기 로드 1회, onUpdate 발생 안 함)
   useEffect(() => {
     if (conclusionEditor && experiment?.conclusion && conclusionEditor.isEmpty) {
-      conclusionEditor.commands.setContent(experiment.conclusion)
+      conclusionEditor.commands.setContent(experiment.conclusion, false)
     }
   }, [conclusionEditor, experiment?.id])
 
@@ -646,6 +639,7 @@ export default function ExperimentDetailPage() {
     setDeleting(true)
     try {
       await deleteExperiment(experiment.id)
+      setIsDirty(false)   // blocker가 삭제 후 이동을 막지 않도록
       navigate('/experiments', { replace: true })
     } finally {
       setDeleting(false)
@@ -684,6 +678,30 @@ export default function ExperimentDetailPage() {
   return (
     <div className="max-w-2xl mx-auto px-6 py-6">
 
+      {/* 미저장 이탈 경고 다이얼로그 */}
+      {blocker.state === 'blocked' && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1.5">저장하지 않은 변경사항</h3>
+            <p className="text-sm text-gray-500 mb-5">변경사항이 저장되지 않았습니다. 그래도 나가시겠습니까?</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => blocker.reset()}
+                className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => blocker.proceed()}
+                className="px-4 py-2 text-sm text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+              >
+                나가기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-6">
         <button
@@ -696,15 +714,21 @@ export default function ExperimentDetailPage() {
           목록으로
         </button>
 
-        <div className="flex items-center gap-3">
-          <span className={`text-xs transition-colors ${
-            saveStatus === 'saving'  ? 'text-blue-500' :
-            saveStatus === 'unsaved' ? 'text-orange-400' :
-            'text-gray-400'
-          }`}>
-            {saveStatus === 'saving' ? '저장 중...' : saveStatus === 'unsaved' ? '변경됨' : '저장됨'}
-          </span>
+        <div className="flex items-center gap-2">
+          {/* 저장 버튼 */}
+          <button
+            onClick={handleSave}
+            disabled={!isDirty || saving}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              isDirty && !saving
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-100 text-gray-400 cursor-default'
+            }`}
+          >
+            {saving ? '저장 중...' : '저장'}
+          </button>
 
+          {/* 삭제 */}
           {!showDeleteConfirm ? (
             <button
               onClick={() => setShowDeleteConfirm(true)}
