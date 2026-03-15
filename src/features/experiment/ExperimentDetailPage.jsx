@@ -373,7 +373,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
                 placeholder="캡션"
               />
               {/* 이미지 추가 + 블록 삭제 — 캡션 우측 오버레이 */}
-              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-[0.15] hover:opacity-100 transition-opacity">
+              <div className="absolute bottom-[6px] right-1 flex items-center gap-0.5 opacity-[0.15] hover:opacity-100 transition-opacity">
                 <label
                   className="p-0.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded cursor-pointer transition-colors"
                   title="이미지 추가"
