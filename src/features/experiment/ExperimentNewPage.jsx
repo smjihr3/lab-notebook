@@ -7,22 +7,15 @@ function generateExpId(experiments) {
   const yy = String(now.getFullYear()).slice(2)
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
-  const todayPrefix = `${yy}${mm}${dd}`
+  const prefix = `${yy}${mm}${dd}`
 
-  let maxNum = 0
-  for (const exp of experiments) {
-    const newFmt = exp.id.match(/^(\d{6})-(\d{3})$/)
-    if (newFmt && newFmt[1] === todayPrefix) {
-      maxNum = Math.max(maxNum, parseInt(newFmt[2], 10))
-      continue
-    }
-    const oldFmt = exp.id.match(/^exp_(\d{6})_(\d{3})$/)
-    if (oldFmt && oldFmt[1] === todayPrefix) {
-      maxNum = Math.max(maxNum, parseInt(oldFmt[2], 10))
-    }
-  }
+  // 신·구 형식 모두 인식: YYMMDD-NNN, exp_YYMMDD_NNN
+  const todayNums = experiments
+    .map((e) => { const m = e.id.match(/^(?:exp_)?(\d{6})[_-](\d{3})$/); return m?.[1] === prefix ? parseInt(m[2], 10) : 0 })
+    .filter(Boolean)
 
-  return `${todayPrefix}-${String(maxNum + 1).padStart(3, '0')}`
+  const next = todayNums.length > 0 ? Math.max(...todayNums) + 1 : 1
+  return `${prefix}-${String(next).padStart(3, '0')}`
 }
 
 function generateTitle(experiments) {
