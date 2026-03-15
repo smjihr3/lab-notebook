@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom'
 import { useAuth } from './store/authStore.jsx'
 import { useDrive } from './store/driveStore'
 import Sidebar from './components/Sidebar'
@@ -55,29 +55,34 @@ function AppShell() {
   }
 
   return (
-    <BrowserRouter>
-      <div className="flex h-screen bg-gray-50">
-        <Sidebar />
-        <main className="flex-1 overflow-auto pb-16 md:pb-0">
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            {/* /experiments/new 는 /:id 보다 앞에 위치 */}
-            <Route path="/experiments" element={<ExperimentListPage />} />
-            <Route path="/experiments/new" element={<ExperimentNewPage />} />
-            <Route path="/experiments/:id" element={<ExperimentDetailPage />} />
-            <Route path="/graph" element={<GraphPage />} />
-            <Route path="/calendar" element={<CalendarPage />} />
-            <Route path="/browser" element={<BrowserPage />} />
-            <Route path="/references" element={<ReferencesPage />} />
-            <Route path="/tips" element={<TipsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar />
+      <main className="flex-1 overflow-auto pb-16 md:pb-0">
+        <Outlet />
+      </main>
+    </div>
   )
 }
 
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <AppShell />,
+    children: [
+      { index: true,                element: <DashboardPage /> },
+      { path: 'experiments',        element: <ExperimentListPage /> },
+      { path: 'experiments/new',    element: <ExperimentNewPage /> },
+      { path: 'experiments/:id',    element: <ExperimentDetailPage /> },
+      { path: 'graph',              element: <GraphPage /> },
+      { path: 'calendar',           element: <CalendarPage /> },
+      { path: 'browser',            element: <BrowserPage /> },
+      { path: 'references',         element: <ReferencesPage /> },
+      { path: 'tips',               element: <TipsPage /> },
+      { path: 'settings',           element: <SettingsPage /> },
+    ],
+  },
+])
+
 export default function App() {
-  return <AppShell />
+  return <RouterProvider router={router} />
 }

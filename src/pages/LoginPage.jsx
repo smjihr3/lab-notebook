@@ -1,33 +1,44 @@
+import { useEffect } from 'react'
 import { useGoogleLogin } from '@react-oauth/google'
 import { useAuth } from '../store/authStore.jsx'
-import { parseGoogleCredential } from '../services/auth'
+
+async function fetchUserInfo(accessToken) {
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return res.json()
+}
 
 export default function LoginPage() {
   const { login } = useAuth()
 
+  // redirect 방식으로 돌아왔을 때 URL 해시에서 토큰 추출
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.includes('access_token=')) return
+
+    const params = new URLSearchParams(hash.slice(1))
+    const accessToken = params.get('access_token')
+    if (!accessToken) return
+
+    window.history.replaceState(null, '', window.location.pathname)
+    fetchUserInfo(accessToken)
+      .then((userInfo) => {
+        login({
+          user: { name: userInfo.name, email: userInfo.email, picture: userInfo.picture },
+          accessToken,
+        })
+      })
+      .catch(console.error)
+  }, [])
+
   const handleLogin = useGoogleLogin({
+    ux_mode: 'redirect',
     scope: [
       'https://www.googleapis.com/auth/drive.file',
       'https://www.googleapis.com/auth/drive.metadata.readonly',
     ].join(' '),
-    onSuccess: async (tokenResponse) => {
-      // tokenResponse.access_token으로 유저 정보 조회
-      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-      })
-      const userInfo = await res.json()
-      login({
-        user: {
-          name: userInfo.name,
-          email: userInfo.email,
-          picture: userInfo.picture,
-        },
-        accessToken: tokenResponse.access_token,
-      })
-    },
-    onError: (err) => {
-      console.error('Google login failed:', err)
-    },
+    onError: (err) => console.error('Google login failed:', err),
   })
 
   return (
