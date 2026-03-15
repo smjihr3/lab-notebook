@@ -8,6 +8,7 @@ import { useAuth } from '../../store/authStore.jsx'
 import { useDrive } from '../../store/driveStore'
 import { useExperiments } from '../../store/experimentStore'
 import { uploadBinaryFile } from '../../services/drive/driveClient'
+import { fetchByDoi } from '../../services/crossref/index.js'
 
 // ── Excel/HTML 표 파싱 헬퍼 ───────────────────────────────────
 
@@ -430,6 +431,16 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
   )
 }
 
+// ── 절차 내용 여부 체크 ───────────────────────────────────────
+
+function isProcedureNonEmpty(doc) {
+  if (!doc || !Array.isArray(doc.content)) return false
+  return doc.content.some((node) => {
+    if (node.type === 'paragraph') return Array.isArray(node.content) && node.content.length > 0
+    return true // table, list, heading 등은 내용 있는 것으로 간주
+  })
+}
+
 // ── 상수 ─────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
@@ -522,8 +533,13 @@ export default function ExperimentDetailPage() {
   const [tagInput, setTagInput] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [outcomePopup, setOutcomePopup] = useState(false)
+  const [doiInput, setDoiInput] = useState('')
+  const [doiLooking, setDoiLooking] = useState(false)
+  const [doiError, setDoiError] = useState('')
 
   const latestRef = useRef(null)
+  const statusManuallySetRef = useRef(false)
 
   // ── 미저장 상태에서 이탈 차단 ────────────────────────────────
   const blocker = useBlocker(isDirty)
@@ -533,7 +549,28 @@ export default function ExperimentDetailPage() {
     if (!latestRef.current) return
     setSaving(true)
     try {
-      const saved = await updateExperiment(latestRef.current)
+      let data = latestRef.current
+
+      // status 자동 전환 (수동 설정 안 했고 completed 아닐 때만)
+      if (!statusManuallySetRef.current && data.status !== 'completed') {
+        const hasDataBlocks = (data.dataBlocks ?? []).length > 0
+        const hasProcedure = isProcedureNonEmpty(data.procedure?.common)
+        let autoStatus
+        if (hasDataBlocks) {
+          autoStatus = 'analyzing'
+        } else if (hasProcedure) {
+          autoStatus = 'data_pending'
+        } else {
+          autoStatus = 'in_progress'
+        }
+        if (autoStatus !== data.status) {
+          data = { ...data, status: autoStatus }
+          latestRef.current = data
+          setExperiment(data)
+        }
+      }
+
+      const saved = await updateExperiment(data)
       latestRef.current = saved
       setExperiment(saved)
       setIsDirty(false)
@@ -606,11 +643,40 @@ export default function ExperimentDetailPage() {
     },
   })
 
+  // ── DOI 조회 ─────────────────────────────────────────────────
+  async function handleDoiLookup() {
+    const doi = doiInput.trim()
+    if (!doi) return
+    setDoiLooking(true)
+    setDoiError('')
+    try {
+      const result = await fetchByDoi(doi)
+      const existing = latestRef.current?.connections?.references ?? []
+      if (existing.some((r) => r.doi === result.doi)) {
+        setDoiError('이미 추가된 DOI입니다.')
+        return
+      }
+      const newRef = { doi: result.doi, shortCitation: result.shortCitation }
+      update({
+        connections: {
+          ...(latestRef.current?.connections ?? {}),
+          references: [...existing, newRef],
+        },
+      })
+      setDoiInput('')
+    } catch {
+      setDoiError('DOI 조회에 실패했습니다. DOI를 확인하세요.')
+    } finally {
+      setDoiLooking(false)
+    }
+  }
+
   // ── 데이터 로드 ──────────────────────────────────────────────
   useEffect(() => {
     if (!isReady) return
     setLoading(true)
     setIsDirty(false)
+    statusManuallySetRef.current = false
     getExperiment(id).then((found) => {
       if (found) {
         latestRef.current = found
@@ -702,6 +768,42 @@ export default function ExperimentDetailPage() {
         </div>
       )}
 
+      {/* outcome 선택 팝업 (completed 전환 시) */}
+      {outcomePopup && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-xs w-full">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1.5">실험 결과</h3>
+            <p className="text-xs text-gray-500 mb-4">이 실험의 결과를 선택하세요.</p>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {[
+                { value: 'success', label: '성공', cls: 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200' },
+                { value: 'failed',  label: '실패',  cls: 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200' },
+                { value: 'partial', label: '부분 성공', cls: 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200' },
+                { value: 'unknown', label: '미정',  cls: 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => {
+                    statusManuallySetRef.current = true
+                    update({ status: 'completed', outcome: opt.value })
+                    setOutcomePopup(false)
+                  }}
+                  className={`py-2 text-xs font-medium rounded-lg transition-colors ${opt.cls}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setOutcomePopup(false)}
+              className="w-full py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-6">
         <button
@@ -773,7 +875,15 @@ export default function ExperimentDetailPage() {
       <div className="flex items-center gap-3 mb-6">
         <select
           value={experiment.status}
-          onChange={(e) => update({ status: e.target.value })}
+          onChange={(e) => {
+            const val = e.target.value
+            if (val === 'completed') {
+              setOutcomePopup(true)
+            } else {
+              statusManuallySetRef.current = true
+              update({ status: val })
+            }
+          }}
           className={`text-xs font-medium px-2.5 py-1 rounded-full border-none outline-none cursor-pointer ${STATUS_CLS[experiment.status] ?? 'bg-gray-100 text-gray-600'}`}
         >
           {STATUS_OPTIONS.map((opt) => (
@@ -855,6 +965,57 @@ export default function ExperimentDetailPage() {
         >
           <EditorToolbar editor={conclusionEditor} />
           <EditorContent editor={conclusionEditor} className={EDITOR_CONTENT_CLS} />
+        </div>
+      </div>
+
+      {/* 참고문헌 */}
+      <div className="mb-6">
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">참고문헌</label>
+        <div className="flex gap-2 mb-2">
+          <input
+            className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400 transition-colors font-mono"
+            value={doiInput}
+            onChange={(e) => { setDoiInput(e.target.value); setDoiError('') }}
+            onKeyDown={(e) => e.key === 'Enter' && handleDoiLookup()}
+            placeholder="DOI 입력 후 Enter (예: 10.1021/...)"
+          />
+          <button
+            type="button"
+            onClick={handleDoiLookup}
+            disabled={doiLooking || !doiInput.trim()}
+            className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+          >
+            {doiLooking ? '조회중...' : '조회'}
+          </button>
+        </div>
+        {doiError && <p className="text-xs text-red-500 mb-2">{doiError}</p>}
+        <div className="space-y-1">
+          {(experiment.connections?.references ?? []).map((ref, i) => (
+            <div key={i} className="flex items-start gap-2 text-xs bg-gray-50 rounded-lg px-3 py-2">
+              <span className="text-gray-400 flex-shrink-0">[{i + 1}]</span>
+              <a
+                href={`https://doi.org/${ref.doi}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 min-w-0 text-blue-600 hover:underline break-all"
+              >
+                {ref.shortCitation || ref.doi}
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  const refs = (experiment.connections?.references ?? []).filter((_, j) => j !== i)
+                  update({ connections: { ...(experiment.connections ?? {}), references: refs } })
+                }}
+                className="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                title="삭제"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
         </div>
       </div>
 
