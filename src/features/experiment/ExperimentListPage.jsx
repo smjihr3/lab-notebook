@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../store/authStore.jsx'
-import { useDrive } from '../../store/driveStore'
-import { getAllExperiments, deleteExperiment } from '../../services/drive/driveService'
+import { useExperiments } from '../../store/experimentStore'
 
 const STATUS_BADGE = {
   in_progress:  { label: '진행중',     cls: 'bg-blue-100 text-blue-700' },
@@ -20,25 +18,14 @@ const OUTCOME_BADGE = {
 
 export default function ExperimentListPage() {
   const navigate = useNavigate()
-  const { accessToken } = useAuth()
-  const { folderMap } = useDrive()
-  const [experiments, setExperiments] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { experiments, isLoading, deleteExperiment } = useExperiments()
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
-
-  useEffect(() => {
-    if (!folderMap || !accessToken) return
-    getAllExperiments({ token: accessToken, folderMap })
-      .then(setExperiments)
-      .finally(() => setLoading(false))
-  }, [folderMap, accessToken])
 
   async function handleDelete(exp) {
     setDeletingId(exp.id)
     try {
-      await deleteExperiment(exp, { token: accessToken })
-      setExperiments((prev) => prev.filter((e) => e.id !== exp.id))
+      await deleteExperiment(exp.id)
     } finally {
       setDeletingId(null)
       setConfirmDeleteId(null)
@@ -60,7 +47,7 @@ export default function ExperimentListPage() {
         </button>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="flex justify-center py-16">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
         </div>
@@ -83,7 +70,6 @@ export default function ExperimentListPage() {
                   onClick={() => !isConfirming && navigate(`/experiments/${exp.id}`)}
                   className="w-full text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
                 >
-                  {/* 카드 우상단 삭제 버튼 */}
                   {!isConfirming && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(exp.id) }}
@@ -96,7 +82,6 @@ export default function ExperimentListPage() {
                     </button>
                   )}
 
-                  {/* 삭제 확인 오버레이 */}
                   {isConfirming && (
                     <div
                       onClick={(e) => e.stopPropagation()}

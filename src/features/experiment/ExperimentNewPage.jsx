@@ -1,8 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../store/authStore.jsx'
-import { useDrive } from '../../store/driveStore'
-import { getAllExperiments, saveExperiment } from '../../services/drive/driveService'
+import { useExperiments } from '../../store/experimentStore'
 
 function generateExpId(count) {
   const now = new Date()
@@ -15,19 +13,15 @@ function generateExpId(count) {
 
 export default function ExperimentNewPage() {
   const navigate = useNavigate()
-  const { accessToken } = useAuth()
-  const { folderMap } = useDrive()
+  const { experiments, isLoading, createExperiment } = useExperiments()
 
   useEffect(() => {
-    if (!folderMap || !accessToken) return
+    if (isLoading) return
     let cancelled = false
 
     async function create() {
-      const list = await getAllExperiments({ token: accessToken, folderMap })
-      if (cancelled) return
-
       const newExp = {
-        id: generateExpId(list.length),
+        id: generateExpId(experiments.length),
         projectId: null,
         title: '새 실험 노트',
         createdAt: new Date().toISOString(),
@@ -38,11 +32,10 @@ export default function ExperimentNewPage() {
         tags: [],
         procedure: { common: null, conditionTable: {}, observations: {} },
         dataBlocks: [],
-        conclusion: {},
+        conclusion: null,
         connections: { precedingExperiments: [], followingExperiments: [], references: [] },
       }
-
-      const saved = await saveExperiment(newExp, { token: accessToken, folderMap })
+      const saved = await createExperiment(newExp)
       if (!cancelled) {
         navigate(`/experiments/${saved.id}`, { replace: true })
       }
@@ -50,7 +43,7 @@ export default function ExperimentNewPage() {
 
     create().catch(console.error)
     return () => { cancelled = true }
-  }, [folderMap, accessToken])
+  }, [isLoading])
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">

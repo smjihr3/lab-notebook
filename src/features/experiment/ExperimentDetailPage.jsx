@@ -5,7 +5,8 @@ import StarterKit from '@tiptap/starter-kit'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import { useAuth } from '../../store/authStore.jsx'
 import { useDrive } from '../../store/driveStore'
-import { getAllExperiments, saveExperiment, deleteExperiment } from '../../services/drive/driveService'
+import { useExperiments } from '../../store/experimentStore'
+import { uploadBinaryFile } from '../../services/drive/driveClient'
 
 // ── Excel/HTML 표 파싱 헬퍼 ───────────────────────────────────
 
@@ -58,7 +59,6 @@ function cellToTiptapNode(td, colwidth, isHeader) {
 }
 
 function htmlTableToTiptap(tableEl) {
-  // colgroup → col widths
   const colwidths = []
   tableEl.querySelectorAll('colgroup col, col').forEach((col) => {
     const raw = col.style?.width || col.getAttribute('width') || ''
@@ -77,6 +77,367 @@ function htmlTableToTiptap(tableEl) {
   })
 
   return rows.length > 0 ? { type: 'table', content: rows } : null
+}
+
+// ── DriveImage 컴포넌트 ───────────────────────────────────────
+
+function DriveImage({ fileId, localUrl, accessToken, className, onClick }) {
+  const [src, setSrc] = useState(localUrl ?? null)
+
+  useEffect(() => {
+    if (localUrl) { setSrc(localUrl); return }
+    if (!fileId || !accessToken) return
+    let objectUrl = null
+    fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.blob() })
+      .then((blob) => { objectUrl = URL.createObjectURL(blob); setSrc(objectUrl) })
+      .catch(console.error)
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [fileId, localUrl, accessToken])
+
+  if (!src) return <div className={`bg-gray-100 animate-pulse rounded ${className}`} />
+  return (
+    <img
+      src={src}
+      alt=""
+      className={className}
+      onClick={onClick ? () => onClick(src) : undefined}
+    />
+  )
+}
+
+// ── 분석 종류 ────────────────────────────────────────────────
+
+const DEFAULT_ANALYSIS_TYPES = ['PXRD', 'IR', 'NMR', 'OM', 'SEM', 'Photo', 'BET']
+
+function AnalysisTypeBadge({ value, allTypes, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [customInput, setCustomInput] = useState('')
+  const ref = useRef(null)
+
+  useEffect(() => {
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 transition-colors"
+      >
+        {value}
+      </button>
+      {open && (
+        <div className="absolute top-6 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 p-1.5 min-w-[120px]">
+          {allTypes.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`w-full text-left text-xs px-2 py-1 rounded hover:bg-gray-50 transition-colors ${t === value ? 'font-semibold text-blue-600' : 'text-gray-700'}`}
+              onClick={() => { onChange(t); setOpen(false) }}
+            >
+              {t}
+            </button>
+          ))}
+          <div className="border-t border-gray-100 mt-1 pt-1 flex gap-1">
+            <input
+              className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-0.5 outline-none focus:border-blue-400"
+              placeholder="직접 입력"
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && customInput.trim()) {
+                  onChange(customInput.trim())
+                  setCustomInput('')
+                  setOpen(false)
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 데이터 블록 섹션 ─────────────────────────────────────────
+
+function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
+  const [localUrls, setLocalUrls] = useState({})   // itemId → blob URL
+  const [lightbox, setLightbox] = useState(null)   // resolved src string
+
+  // 현재 사용 중인 analysisType 포함 전체 목록
+  const allTypes = (() => {
+    const extra = new Set()
+    for (const b of blocks) {
+      for (const it of b.items ?? []) {
+        if (it.analysisType && !DEFAULT_ANALYSIS_TYPES.includes(it.analysisType)) {
+          extra.add(it.analysisType)
+        }
+      }
+    }
+    return [...DEFAULT_ANALYSIS_TYPES, ...extra]
+  })()
+
+  function _updateBlocks(updater) {
+    onChange(typeof updater === 'function' ? updater(blocks) : updater)
+  }
+
+  function addBlock() {
+    const blockId = `block_${Date.now()}`
+    _updateBlocks((prev) => [
+      ...prev,
+      { id: blockId, groupLabel: '', items: [], interpretation: {} },
+    ])
+  }
+
+  function deleteBlock(blockId) {
+    _updateBlocks((prev) => prev.filter((b) => b.id !== blockId))
+  }
+
+  function updateBlock(blockId, changes) {
+    _updateBlocks((prev) =>
+      prev.map((b) => b.id === blockId ? { ...b, ...changes } : b)
+    )
+  }
+
+  function updateItem(blockId, itemId, changes) {
+    _updateBlocks((prev) =>
+      prev.map((b) => b.id !== blockId ? b : {
+        ...b,
+        items: b.items.map((it) => it.id !== itemId ? it : { ...it, ...changes }),
+      })
+    )
+  }
+
+  function deleteItem(blockId, itemId) {
+    _updateBlocks((prev) =>
+      prev.map((b) => b.id !== blockId ? b : {
+        ...b,
+        items: b.items.filter((it) => it.id !== itemId),
+      })
+    )
+    setLocalUrls((prev) => { const n = { ...prev }; delete n[itemId]; return n })
+  }
+
+  async function handleImageFiles(files, blockId) {
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue
+
+      const itemId = `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      const localUrl = URL.createObjectURL(file)
+      setLocalUrls((prev) => ({ ...prev, [itemId]: localUrl }))
+
+      // 아이템을 즉시 추가 (optimistic)
+      const newItem = {
+        id: itemId,
+        analysisType: 'PXRD',
+        driveFileId: '',
+        thumbnailUrl: '',
+        caption: '',
+      }
+      _updateBlocks((prev) =>
+        prev.map((b) => b.id !== blockId ? b : {
+          ...b, items: [...b.items, newItem],
+        })
+      )
+
+      // Drive 업로드
+      try {
+        const ext = file.type.split('/')[1] || 'png'
+        const namedFile = new File([file], `${itemId}.${ext}`, { type: file.type })
+        const uploaded = await uploadBinaryFile(namedFile, uploadFolderId, accessToken)
+        _updateBlocks((prev) =>
+          prev.map((b) => b.id !== blockId ? b : {
+            ...b,
+            items: b.items.map((it) =>
+              it.id !== itemId ? it : { ...it, driveFileId: uploaded.id }
+            ),
+          })
+        )
+      } catch (err) {
+        console.error('Image upload failed:', err)
+        deleteItem(blockId, itemId)
+      }
+    }
+  }
+
+  function handlePaste(e, blockId) {
+    const files = Array.from(e.clipboardData?.files ?? []).filter(
+      (f) => f.type.startsWith('image/')
+    )
+    if (files.length > 0) {
+      e.preventDefault()
+      handleImageFiles(files, blockId)
+    }
+  }
+
+  function handleFileInput(e, blockId) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    handleImageFiles(files, blockId)
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          데이터
+        </label>
+        <button
+          type="button"
+          onClick={addBlock}
+          className="flex items-center gap-1 text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          데이터 추가
+        </button>
+      </div>
+
+      {blocks.length === 0 && (
+        <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center text-gray-400 text-sm">
+          "데이터 추가" 버튼으로 분석 데이터 블록을 추가하세요
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {blocks.map((block) => (
+          <div
+            key={block.id}
+            className="border border-gray-200 rounded-xl bg-white overflow-hidden"
+          >
+            {/* 블록 헤더 */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
+              <input
+                className="flex-1 text-sm font-medium bg-transparent outline-none placeholder-gray-300 text-gray-700"
+                value={block.groupLabel}
+                onChange={(e) => updateBlock(block.id, { groupLabel: e.target.value })}
+                placeholder="그룹 이름 (예: 합성 조건 최적화)"
+              />
+              <button
+                type="button"
+                onClick={() => deleteBlock(block.id)}
+                className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                title="블록 삭제"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+              </button>
+            </div>
+
+            {/* 이미지 영역 */}
+            <div
+              className="p-3"
+              onPaste={(e) => handlePaste(e, block.id)}
+            >
+              {block.items.length === 0 ? (
+                <label className="flex flex-col items-center gap-2 border-2 border-dashed border-gray-200 rounded-lg p-6 cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7 text-gray-300">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                  </svg>
+                  <span className="text-xs text-gray-400">클릭하여 이미지 선택 또는 붙여넣기</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => handleFileInput(e, block.id)}
+                  />
+                </label>
+              ) : (
+                <div className="flex gap-3 overflow-x-auto pb-2">
+                  {block.items.map((item) => (
+                    <div key={item.id} className="flex-shrink-0 flex flex-col gap-1.5">
+                      {/* 이미지 */}
+                      <div className="relative group">
+                        <DriveImage
+                          fileId={item.driveFileId || null}
+                          localUrl={localUrls[item.id] ?? null}
+                          accessToken={accessToken}
+                          className="h-44 w-auto object-contain rounded border border-gray-200 bg-gray-50 cursor-zoom-in"
+                          onClick={(src) => setLightbox(src)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => deleteItem(block.id, item.id)}
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 bg-white/80 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition-all"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      {/* 분석 종류 배지 */}
+                      <AnalysisTypeBadge
+                        value={item.analysisType}
+                        allTypes={allTypes}
+                        onChange={(t) => updateItem(block.id, item.id, { analysisType: t })}
+                      />
+
+                      {/* 캡션 */}
+                      <input
+                        className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:border-blue-400 w-full max-w-[160px] transition-colors"
+                        value={item.caption}
+                        onChange={(e) => updateItem(block.id, item.id, { caption: e.target.value })}
+                        placeholder="캡션"
+                      />
+                    </div>
+                  ))}
+
+                  {/* 이미지 추가 버튼 (블록에 이미지가 있을 때) */}
+                  <label className="flex-shrink-0 flex flex-col items-center justify-center gap-1 border-2 border-dashed border-gray-200 rounded-lg h-44 w-20 cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-gray-300">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    <span className="text-xs text-gray-300">추가</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => handleFileInput(e, block.id)}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 라이트박스 */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <img
+            src={lightbox}
+            alt=""
+            className="max-w-full max-h-full object-contain rounded shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white"
+            onClick={() => setLightbox(null)}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-7 h-7">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── 상수 ─────────────────────────────────────────────────────
@@ -116,13 +477,53 @@ function Divider() {
   return <span className="w-px h-4 bg-gray-200 mx-0.5 self-center" />
 }
 
-// ── 컴포넌트 ──────────────────────────────────────────────────
+function EditorToolbar({ editor }) {
+  if (!editor) return null
+  return (
+    <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-100 bg-gray-50">
+      <TBtn onClick={() => editor.chain().focus().toggleBold().run()}    title="굵게"   active={editor.isActive('bold')}><strong>B</strong></TBtn>
+      <TBtn onClick={() => editor.chain().focus().toggleItalic().run()}  title="기울임" active={editor.isActive('italic')}><em>I</em></TBtn>
+      <TBtn onClick={() => editor.chain().focus().toggleStrike().run()}  title="취소선" active={editor.isActive('strike')}><s>S</s></TBtn>
+      <Divider />
+      <TBtn onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} title="제목 1" active={editor.isActive('heading', { level: 1 })}>H1</TBtn>
+      <TBtn onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="제목 2" active={editor.isActive('heading', { level: 2 })}>H2</TBtn>
+      <Divider />
+      <TBtn onClick={() => editor.chain().focus().toggleBulletList().run()}   title="글머리 목록" active={editor.isActive('bulletList')}>• 목록</TBtn>
+      <TBtn onClick={() => editor.chain().focus().toggleOrderedList().run()}  title="번호 목록"  active={editor.isActive('orderedList')}>1. 목록</TBtn>
+      <Divider />
+      <TBtn onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="표 삽입 (3×3)">표 삽입</TBtn>
+      <TBtn onClick={() => editor.chain().focus().addColumnAfter().run()}  title="열 추가">+열</TBtn>
+      <TBtn onClick={() => editor.chain().focus().addRowAfter().run()}     title="행 추가">+행</TBtn>
+      <TBtn onClick={() => editor.chain().focus().deleteTable().run()}     title="표 삭제">표 삭제</TBtn>
+    </div>
+  )
+}
+
+const EDITOR_CONTENT_CLS = `px-4 py-3 min-h-[160px] text-sm text-gray-800
+  [&_.ProseMirror]:outline-none
+  [&_.ProseMirror_p]:my-1
+  [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5
+  [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5
+  [&_.ProseMirror_h1]:text-xl [&_.ProseMirror_h1]:font-bold [&_.ProseMirror_h1]:my-2
+  [&_.ProseMirror_h2]:text-lg [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:my-1.5
+  [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-gray-300 [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:text-gray-500`
+
+const TIPTAP_EXTENSIONS = [
+  StarterKit,
+  Table.configure({ resizable: true }),
+  TableRow,
+  TableCell,
+  TableHeader,
+]
+
+// ── 메인 컴포넌트 ─────────────────────────────────────────────
 
 export default function ExperimentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { accessToken } = useAuth()
   const { folderMap } = useDrive()
+  const { isReady, getExperiment, updateExperiment, deleteExperiment } = useExperiments()
 
   const [experiment, setExperiment] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -133,11 +534,6 @@ export default function ExperimentDetailPage() {
 
   const latestRef      = useRef(null)
   const saveTimerRef   = useRef(null)
-  const accessTokenRef = useRef(accessToken)
-  const folderMapRef   = useRef(folderMap)
-
-  useEffect(() => { accessTokenRef.current = accessToken }, [accessToken])
-  useEffect(() => { folderMapRef.current   = folderMap   }, [folderMap])
 
   // ── 디바운스 저장 ────────────────────────────────────────────
   const debouncedSave = useCallback((data) => {
@@ -146,10 +542,7 @@ export default function ExperimentDetailPage() {
     saveTimerRef.current = setTimeout(async () => {
       setSaveStatus('saving')
       try {
-        const saved = await saveExperiment(data, {
-          token: accessTokenRef.current,
-          folderMap: folderMapRef.current,
-        })
+        const saved = await updateExperiment(data)
         latestRef.current = saved
         setExperiment(saved)
         setSaveStatus('saved')
@@ -157,7 +550,7 @@ export default function ExperimentDetailPage() {
         setSaveStatus('unsaved')
       }
     }, 2000)
-  }, [])
+  }, [updateExperiment])
 
   // ── 필드 업데이트 ────────────────────────────────────────────
   function update(changes) {
@@ -170,36 +563,26 @@ export default function ExperimentDetailPage() {
     })
   }
 
-  // ── Tiptap 에디터 ────────────────────────────────────────────
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Table.configure({ resizable: true }),
-      TableRow,
-      TableCell,
-      TableHeader,
-    ],
+  // ── Tiptap: 실험 절차 ────────────────────────────────────────
+  const procedureEditor = useEditor({
+    extensions: TIPTAP_EXTENSIONS,
     content: '',
     editorProps: {
       handlePaste(view, event) {
         const html = event.clipboardData?.getData('text/html')
         if (!html) return false
-
         const doc = new DOMParser().parseFromString(html, 'text/html')
         const tableEl = doc.querySelector('table')
         if (!tableEl) return false
-
         const tableJson = htmlTableToTiptap(tableEl)
         if (!tableJson) return false
-
         try {
           const node = view.state.schema.nodeFromJSON(tableJson)
-          const tr = view.state.tr.replaceSelectionWith(node)
-          view.dispatch(tr)
+          view.dispatch(view.state.tr.replaceSelectionWith(node))
           event.preventDefault()
           return true
         } catch (err) {
-          console.warn('Table paste failed, falling back to default:', err)
+          console.warn('Table paste failed:', err)
           return false
         }
       },
@@ -217,31 +600,52 @@ export default function ExperimentDetailPage() {
     },
   })
 
+  // ── Tiptap: 결론 ─────────────────────────────────────────────
+  const conclusionEditor = useEditor({
+    extensions: TIPTAP_EXTENSIONS,
+    content: '',
+    onUpdate: ({ editor }) => {
+      const current = latestRef.current
+      if (!current) return
+      const next = { ...current, conclusion: editor.getJSON() }
+      latestRef.current = next
+      setExperiment(next)
+      debouncedSave(next)
+    },
+  })
+
   // ── 데이터 로드 ──────────────────────────────────────────────
   useEffect(() => {
-    if (!folderMap || !accessToken) return
-    getAllExperiments({ token: accessToken, folderMap }).then((list) => {
-      const found = list.find((e) => e.id === id)
+    if (!isReady) return
+    setLoading(true)
+    getExperiment(id).then((found) => {
       if (found) {
         latestRef.current = found
         setExperiment(found)
       }
-      setLoading(false)
-    })
-  }, [folderMap, accessToken, id])
+    }).catch(console.error).finally(() => setLoading(false))
+  }, [isReady, id])
 
+  // procedure 에디터에 내용 주입 (실험 로드 후 1회)
   useEffect(() => {
-    if (editor && experiment?.procedure?.common && editor.isEmpty) {
-      editor.commands.setContent(experiment.procedure.common)
+    if (procedureEditor && experiment?.procedure?.common && procedureEditor.isEmpty) {
+      procedureEditor.commands.setContent(experiment.procedure.common)
     }
-  }, [editor, experiment?.id])
+  }, [procedureEditor, experiment?.id])
+
+  // conclusion 에디터에 내용 주입 (실험 로드 후 1회)
+  useEffect(() => {
+    if (conclusionEditor && experiment?.conclusion && conclusionEditor.isEmpty) {
+      conclusionEditor.commands.setContent(experiment.conclusion)
+    }
+  }, [conclusionEditor, experiment?.id])
 
   // ── 삭제 ─────────────────────────────────────────────────────
   async function handleDelete() {
     if (!experiment) return
     setDeleting(true)
     try {
-      await deleteExperiment(experiment, { token: accessToken })
+      await deleteExperiment(experiment.id)
       navigate('/experiments', { replace: true })
     } finally {
       setDeleting(false)
@@ -397,43 +801,31 @@ export default function ExperimentDetailPage() {
         />
       </div>
 
-      {/* 실험 절차 (Tiptap) */}
+      {/* 실험 절차 */}
       <div className="mb-6">
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">실험 절차</label>
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors">
-
-          {/* 툴바 */}
-          <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-100 bg-gray-50">
-            <TBtn onClick={() => editor?.chain().focus().toggleBold().run()}    title="굵게"   active={editor?.isActive('bold')}><strong>B</strong></TBtn>
-            <TBtn onClick={() => editor?.chain().focus().toggleItalic().run()}  title="기울임" active={editor?.isActive('italic')}><em>I</em></TBtn>
-            <TBtn onClick={() => editor?.chain().focus().toggleStrike().run()}  title="취소선" active={editor?.isActive('strike')}><s>S</s></TBtn>
-            <Divider />
-            <TBtn onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} title="제목 1" active={editor?.isActive('heading', { level: 1 })}>H1</TBtn>
-            <TBtn onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} title="제목 2" active={editor?.isActive('heading', { level: 2 })}>H2</TBtn>
-            <Divider />
-            <TBtn onClick={() => editor?.chain().focus().toggleBulletList().run()}   title="글머리 목록" active={editor?.isActive('bulletList')}>• 목록</TBtn>
-            <TBtn onClick={() => editor?.chain().focus().toggleOrderedList().run()}  title="번호 목록"  active={editor?.isActive('orderedList')}>1. 목록</TBtn>
-            <Divider />
-            <TBtn onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="표 삽입 (3×3)">표 삽입</TBtn>
-            <TBtn onClick={() => editor?.chain().focus().addColumnAfter().run()}  title="열 추가">+열</TBtn>
-            <TBtn onClick={() => editor?.chain().focus().addRowAfter().run()}     title="행 추가">+행</TBtn>
-            <TBtn onClick={() => editor?.chain().focus().deleteTable().run()}     title="표 삭제">표 삭제</TBtn>
-          </div>
-
-          {/* 에디터 본문 */}
-          <EditorContent
-            editor={editor}
-            className="px-4 py-3 min-h-[160px] text-sm text-gray-800
-              [&_.ProseMirror]:outline-none
-              [&_.ProseMirror_p]:my-1
-              [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5
-              [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5
-              [&_.ProseMirror_h1]:text-xl [&_.ProseMirror_h1]:font-bold [&_.ProseMirror_h1]:my-2
-              [&_.ProseMirror_h2]:text-lg [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:my-1.5
-              [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-gray-300 [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:text-gray-500"
-          />
+          <EditorToolbar editor={procedureEditor} />
+          <EditorContent editor={procedureEditor} className={EDITOR_CONTENT_CLS} />
         </div>
         <p className="text-xs text-gray-400 mt-1">엑셀에서 복사한 표를 그대로 붙여넣기 할 수 있습니다.</p>
+      </div>
+
+      {/* 데이터 블록 */}
+      <DataBlocksSection
+        blocks={experiment.dataBlocks ?? []}
+        onChange={(newBlocks) => update({ dataBlocks: newBlocks })}
+        accessToken={accessToken}
+        uploadFolderId={folderMap?.experiments}
+      />
+
+      {/* 결론 */}
+      <div className="mb-6">
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">결론</label>
+        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors">
+          <EditorToolbar editor={conclusionEditor} />
+          <EditorContent editor={conclusionEditor} className={EDITOR_CONTENT_CLS} />
+        </div>
       </div>
 
     </div>
