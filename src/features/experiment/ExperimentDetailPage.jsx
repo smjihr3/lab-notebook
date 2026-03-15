@@ -194,6 +194,16 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
   const blocksRef = useRef(blocks)
   useEffect(() => { blocksRef.current = blocks }, [blocks])
 
+  // 캡션 textarea 자동 높이 조절
+  const captionRefs = useRef({})
+  useEffect(() => {
+    for (const el of Object.values(captionRefs.current)) {
+      if (!el) continue
+      el.style.height = 'auto'
+      el.style.height = `${el.scrollHeight}px`
+    }
+  }, [blocks])
+
   const allTypes = (() => {
     const extra = new Set()
     for (const b of blocks) {
@@ -310,7 +320,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         {blocks.map((block) => (
           <div
             key={block.id}
-            className="flex flex-col border border-gray-200 rounded-lg bg-white"
+            className="flex flex-col border border-gray-200 rounded-lg bg-white w-fit"
             onPaste={(e) => handlePaste(e, block.id)}
           >
             {/* 이미지 영역 (이미지가 있을 때만 표시) */}
@@ -349,14 +359,21 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
             )}
 
             {/* 캡션 + 이미지 추가 버튼 + 블록 삭제 */}
-            <div className={`flex items-center gap-0.5 px-2 ${block.items.length > 0 ? 'border-t border-gray-100 py-1.5' : 'py-1.5'}`}>
-              <input
-                className="flex-1 text-xs text-gray-700 bg-transparent outline-none placeholder-gray-300 min-w-[120px]"
+            <div className={`flex items-end gap-0.5 px-2 ${block.items.length > 0 ? 'border-t border-gray-100 py-1.5' : 'py-1.5'}`}>
+              <textarea
+                ref={(el) => { captionRefs.current[block.id] = el }}
+                className="flex-1 text-xs text-gray-700 bg-transparent outline-none placeholder-gray-300 min-w-[120px] resize-none overflow-hidden leading-relaxed"
                 value={block.caption ?? ''}
-                onChange={(e) => updateBlock(block.id, { caption: e.target.value })}
+                rows={1}
+                onChange={(e) => {
+                  e.target.style.height = 'auto'
+                  e.target.style.height = `${e.target.scrollHeight}px`
+                  updateBlock(block.id, { caption: e.target.value })
+                }}
                 placeholder="캡션"
               />
               {/* 이미지 추가 아이콘 버튼 */}
+
               <label
                 className="flex-shrink-0 p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 cursor-pointer transition-colors"
                 title="이미지 추가"
