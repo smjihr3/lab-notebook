@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useGraphGroups } from './GraphGroupProvider'
-import { generateGroupId, resolveGroupNodeIds, getGroupBounds, getGroupEndpointNodeIds, GROUP_COLORS } from './graphGroups'
+import { generateGroupId, resolveGroupNodeIds, getGroupBounds, getGroupEndpointNodeIds, isEndNode, GROUP_COLORS } from './graphGroups'
 
 function ExperimentSearchInput({ experiments, excludeIds = [], placeholder, value, onChange }) {
   const [query, setQuery] = useState('')
@@ -135,8 +135,11 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
   const [addingStart, setAddingStart] = useState(false)
 
   const startNodeIds  = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
-  const endpointIds   = getGroupEndpointNodeIds(group)      // Set
   const nodeIds       = resolveGroupNodeIds(group, experiments)
+  // 실제 끝점: 등록된 후보(blockedEdges.from + terminalNodeIds) 중 그룹 내 활성 자식이 없는 것
+  const endpointIds   = new Set(
+    [...getGroupEndpointNodeIds(group)].filter((id) => isEndNode(id, group, nodeIds, experiments))
+  )
   const excludeIds    = [...startNodeIds, ...endpointIds]
 
   function handleFit() {

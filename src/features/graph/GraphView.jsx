@@ -17,7 +17,7 @@ import GroupListPanel from './GroupListPanel'
 import { useGraphGroups } from './GraphGroupProvider'
 import {
   resolveGroupNodeIds, getGroupBounds, generateGroupId, GROUP_COLORS,
-  getGroupEndpointNodeIds, migrateGroupEndNodes,
+  getGroupEndpointNodeIds, migrateGroupEndNodes, isEndNode,
 } from './graphGroups'
 
 const nodeTypes = {
@@ -60,7 +60,14 @@ export default function GraphView() {
   // ── 그룹 핀 정보 부여 ─────────────────────────────────────────
   function annotateGroupMarkers(nodeList) {
     const startIds = new Set(groups.flatMap((g) => g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : [])))
-    const endIds   = new Set(groups.flatMap((g) => [...getGroupEndpointNodeIds(g)]))
+    const fullList = Object.values(fullDataRef.current)
+    const endIds   = new Set()
+    for (const group of groups) {
+      const groupNodeIds = resolveGroupNodeIds(group, fullList)
+      for (const nodeId of groupNodeIds) {
+        if (isEndNode(nodeId, group, groupNodeIds, fullList)) endIds.add(nodeId)
+      }
+    }
     return nodeList.map((n) => ({
       ...n,
       data: {

@@ -127,13 +127,37 @@ export function getGroupEndpointNodeIds(group) {
 }
 
 /**
- * 해당 노드가 그룹의 끝점인지 여부.
+ * 해당 노드가 그룹에 차단/말단 설정을 가지고 있는지 여부.
+ * (컨텍스트 메뉴 표시 여부 판단 등 등록 여부만 확인할 때 사용)
  */
 export function isGroupEndpoint(group, nodeId) {
   if ((group.blockedEdges    ?? []).some((e) => e.from === nodeId)) return true
   if ((group.terminalNodeIds ?? []).includes(nodeId))               return true
   if ((group.endNodeIds      ?? []).includes(nodeId))               return true  // 구형 호환
   return false
+}
+
+/**
+ * 해당 노드가 그룹 내에서 실질적인 끝점(마지막 포함 노드)인지 판단.
+ *
+ * 두 조건을 모두 만족해야 끝점:
+ *   1. 그룹 내 활성 자식(groupNodeIds에 포함된 followingExperiments)이 하나도 없을 것
+ *      (= 모든 자식 방향이 차단됐거나 자식이 없는 노드)
+ *   2. terminalNodeIds에 포함되거나 blockedEdges의 from으로 등록된 경우
+ *
+ * @param {string}     nodeId
+ * @param {object}     group
+ * @param {Set<string>} groupNodeIds  resolveGroupNodeIds 결과
+ * @param {object[]}   experiments   followingExperiments가 포함된 실험 배열
+ */
+export function isEndNode(nodeId, group, groupNodeIds, experiments) {
+  // 조건 2: 차단/말단 등록 여부
+  if (!isGroupEndpoint(group, nodeId)) return false
+  // 조건 1: 그룹 내 활성 자식이 없을 것
+  const exp = experiments.find((e) => e.id === nodeId)
+  const activeChildren = (exp?.connections?.followingExperiments ?? [])
+    .filter((id) => groupNodeIds.has(id))
+  return activeChildren.length === 0
 }
 
 /**
