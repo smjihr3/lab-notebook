@@ -16,7 +16,7 @@ import GraphSidePanel from './GraphSidePanel'
 import GroupListPanel from './GroupListPanel'
 import { useGraphGroups } from './GraphGroupProvider'
 import {
-  resolveGroupNodeIds, getGroupBounds, generateGroupId, GROUP_COLORS,
+  resolveGroupNodeIds, getGroupPolygon, generateGroupId, GROUP_COLORS,
   getGroupEndpointNodeIds, migrateGroupEndNodes, isEndNode,
 } from './graphGroups'
 
@@ -94,7 +94,8 @@ export default function GraphView() {
       data: { ...n.data, layoutDirection: dir },
     }))
     const rawEdges = experimentsToEdges(fullList)
-    const laidOut  = applyDagreLayout(rawNodes, rawEdges, dir)
+    const groupNodeSets = groupsRef.current.map((g) => resolveGroupNodeIds(g, fullList))
+    const laidOut  = applyDagreLayout(rawNodes, rawEdges, dir, groupNodeSets)
 
     setNodes(annotateGroupMarkers(laidOut))
     setEdges(rawEdges)
@@ -157,14 +158,14 @@ export default function GraphView() {
     const fullList = Object.values(fullDataRef.current)
     return groups.map((group) => {
       const nodeIds = resolveGroupNodeIds(group, fullList)
-      const bounds  = getGroupBounds(nodeIds, expNodes)
-      if (!bounds) return null
+      const polygon = getGroupPolygon(nodeIds, expNodes)
+      if (!polygon) return null
       return {
         id:   `group-bg-${group.id}`,
         type: 'groupBackground',
-        position: { x: bounds.x, y: bounds.y },
-        style: { width: bounds.width, height: bounds.height, zIndex: -10 },
-        data: { name: group.name, color: group.color },
+        position: { x: polygon.bounds.x, y: polygon.bounds.y },
+        style: { width: polygon.bounds.width, height: polygon.bounds.height, zIndex: -10 },
+        data: { name: group.name, color: group.color, polygons: polygon.polygons, bounds: polygon.bounds },
         draggable:   false,
         selectable:  false,
         connectable: false,

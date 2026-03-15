@@ -189,6 +189,154 @@ export function getGroupBounds(nodeIds, rfNodes, padding = 32) {
   }
 }
 
+/**
+ * 포함 노드들의 union of padded bounding boxes를 직각 다각형으로 반환.
+ * 격자 기반 경계 추적으로 90도 꼭짓점만 가지는 외곽 polygon 계산.
+ * @returns {{ points: Array<{x,y}>, bounds: {x,y,width,height} } | null}
+ */
+export function getGroupPolygon(nodeIds, rfNodes, padding = 32) {
+  const relevant = rfNodes.filter(
+    (n) => nodeIds.has(n.id) && !n.id.startsWith('group-bg-')
+  )
+  if (relevant.length === 0) return null
+
+  // 각 노드의 padding 포함 bounding rect
+  const rects = relevant.map((n) => {
+    const w = n.width  ?? NODE_WIDTH
+    const h = n.height ?? NODE_HEIGHT
+    return {
+      x0: n.position.x - padding,
+      y0: n.position.y - padding,
+      x1: n.position.x + w + padding,
+      y1: n.position.y + h + padding,
+    }
+  })
+
+  // 좌표 압축
+  const xs = [...new Set(rects.flatMap((r) => [r.x0, r.x1]))].sort((a, b) => a - b)
+  const ys = [...new Set(rects.flatMap((r) => [r.y0, r.y1]))].sort((a, b) => a - b)
+  const nx = xs.length - 1
+  const ny = ys.length - 1
+
+  // 격자 셀 점유 여부
+  const grid = Array.from({ length: ny }, (_, iy) =>
+    Array.from({ length: nx }, (_, ix) => {
+      const cx = (xs[ix] + xs[ix + 1]) / 2
+      const cy = (ys[iy] + ys[iy + 1]) / 2
+      return rects.some((r) => cx > r.x0 && cx < r.x1 && cy > r.y0 && cy < r.y1)
+    })
+  )
+
+  function cell(ix, iy) {
+    return ix >= 0 && ix < nx && iy >= 0 && iy < ny && grid[iy][ix]
+  }
+
+  // 방향성 경계 간선 수집 (내부가 진행 방향의 왼쪽 = CCW 외곽)
+  const edgeMap = new Map()
+
+  function addEdge(x0, y0, x1, y1) {
+    const k = `${x0},${y0}`
+    const arr = edgeMap.get(k) ?? []
+    arr.push({ x: x1, y: y1 })
+    edgeMap.set(k, arr)
+  }
+
+  for (let iy = 0; iy <= ny; iy++) {
+    for (let ix = 0; ix < nx; ix++) {
+      const above = cell(ix, iy - 1)
+      const below = cell(ix, iy)
+      if (!above &&  below) addEdge(xs[ix],     ys[iy], xs[ix + 1], ys[iy])  // →
+      if ( above && !below) addEdge(xs[ix + 1], ys[iy], xs[ix],     ys[iy])  // ←
+    }
+  }
+
+  for (let ix = 0; ix <= nx; ix++) {
+    for (let iy = 0; iy < ny; iy++) {
+      const left  = cell(ix - 1, iy)
+      const right = cell(ix,     iy)
+      if (!left  &&  right) addEdge(xs[ix], ys[iy + 1], xs[ix], ys[iy])      // ↑
+      if ( left  && !right) addEdge(xs[ix], ys[iy],     xs[ix], ys[iy + 1])  // ↓
+    }
+  }
+
+  // 다각형 추적 (남은 간선이 없을 때까지 반복 → 단일/복수 루프 모두 처리)
+  const polygons = []
+  const remaining = new Map()
+  for (const [k, v] of edgeMap) remaining.set(k, [...v])
+
+  for (let guard = 0; guard < 10000 && remaining.size > 0; guard++) {
+    // 시작점 탐색
+    let startKey = null
+    for (const [k, arr] of remaining) {
+      if (arr.length > 0) { startKey = k; break }
+    }
+    if (!startKey) break
+
+    const poly = []
+    let cur = startKey
+
+    for (let g2 = 0; g2 < 10000; g2++) {
+      const arr = remaining.get(cur)
+      if (!arr || arr.length === 0) break
+
+      const [cx, cy] = cur.split(',').map(Number)
+      poly.push({ x: cx, y: cy })
+
+      let next
+      if (arr.length === 1) {
+        next = arr.shift()
+        if (arr.length === 0) remaining.delete(cur)
+      } else {
+        // 여러 선택지: 가장 CW 방향(외곽 추적)
+        const prevPt = poly.length >= 2 ? poly[poly.length - 2] : { x: cx - 1, y: cy }
+        const dx = cx - prevPt.x
+        const dy = cy - prevPt.y
+        next = arr.reduce((best, c) => {
+          const cross1 = (c.x    - cx) * dy - (c.y    - cy) * dx
+          const cross2 = (best.x - cx) * dy - (best.y - cy) * dx
+          return cross1 < cross2 ? c : best
+        })
+        const idx = arr.findIndex((p) => p.x === next.x && p.y === next.y)
+        arr.splice(idx, 1)
+        if (arr.length === 0) remaining.delete(cur)
+      }
+
+      const nextKey = `${next.x},${next.y}`
+      if (nextKey === startKey) break
+      cur = nextKey
+    }
+
+    if (poly.length >= 4) polygons.push(poly)
+  }
+
+  if (polygons.length === 0) return null
+
+  // 면적 계산 (shoelace formula)
+  function polyArea(pts) {
+    return Math.abs(pts.reduce((s, { x, y }, i, a) => {
+      const n = a[(i + 1) % a.length]
+      return s + x * n.y - n.x * y
+    }, 0)) / 2
+  }
+
+  // 모든 다각형 반환 (외곽 + hole 포함), 면적 내림차순
+  polygons.sort((a, b) => polyArea(b) - polyArea(a))
+
+  const allPts = polygons.flat()
+  const allX   = allPts.map((p) => p.x)
+  const allY   = allPts.map((p) => p.y)
+
+  return {
+    polygons,
+    bounds: {
+      x:      Math.min(...allX),
+      y:      Math.min(...allY),
+      width:  Math.max(...allX) - Math.min(...allX),
+      height: Math.max(...allY) - Math.min(...allY),
+    },
+  }
+}
+
 // ── ID 생성 ────────────────────────────────────────────────────
 export function generateGroupId(groups) {
   const nums = groups
