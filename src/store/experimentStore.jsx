@@ -158,6 +158,12 @@ export function ExperimentProvider({ children }) {
 
   /** 캐시 즉시 업데이트 → Drive 저장 → 인덱스 업데이트. Promise 반환 (저장 완료 시 resolve) */
   const updateExperiment = useCallback(async (data) => {
+    const prevData = cacheRef.current[data.id] ?? {}
+    const prevPreceding = prevData.connections?.precedingExperiments ?? []
+    const newPreceding  = data.connections?.precedingExperiments ?? []
+    const prevFollowing = prevData.connections?.followingExperiments ?? []
+    const newFollowing  = data.connections?.followingExperiments ?? []
+
     // Optimistic
     _patchCache((prev) => ({ ...prev, [data.id]: data }))
     const optimisticList = experimentsRef.current.map((e) =>
@@ -176,6 +182,46 @@ export function ExperimentProvider({ children }) {
     )
     _setExp(savedList)
     await _persistIndex(savedList)
+
+    // ── 역참조 동기화 ──────────────────────────────────────────
+    // A의 preceding에 B 추가/제거 → B의 following에 A 반영
+    // A의 following에 B 추가/제거 → B의 preceding에 A 반영
+    async function _syncBackRef(addedIds, removedIds, myId, backRefKey) {
+      for (const otherId of [...addedIds, ...removedIds]) {
+        const otherMeta = experimentsRef.current.find((e) => e.id === otherId)
+        if (!otherMeta?._fileId) continue
+        let otherData = cacheRef.current[otherId]
+        if (!otherData) {
+          try {
+            const raw = await readJsonFile(otherMeta._fileId, tokenRef.current)
+            otherData = { ...raw, _fileId: otherMeta._fileId }
+          } catch { continue }
+        }
+        const backRefs = otherData.connections?.[backRefKey] ?? []
+        const isAdded = addedIds.includes(otherId)
+        const newBackRefs = isAdded
+          ? (backRefs.includes(myId) ? backRefs : [...backRefs, myId])
+          : backRefs.filter((id) => id !== myId)
+        if (newBackRefs.length === backRefs.length && newBackRefs.every((id, i) => id === backRefs[i])) continue
+        const otherUpdated = {
+          ...otherData,
+          connections: { ...(otherData.connections ?? {}), [backRefKey]: newBackRefs },
+        }
+        _patchCache((prev) => ({ ...prev, [otherId]: otherUpdated }))
+        await saveExpDrive(otherUpdated, { token: tokenRef.current, folderMap: folderMapRef.current })
+      }
+    }
+
+    const addedPreceding   = newPreceding.filter((id) => !prevPreceding.includes(id))
+    const removedPreceding = prevPreceding.filter((id) => !newPreceding.includes(id))
+    const addedFollowing   = newFollowing.filter((id) => !prevFollowing.includes(id))
+    const removedFollowing = prevFollowing.filter((id) => !newFollowing.includes(id))
+
+    await Promise.all([
+      _syncBackRef(addedPreceding, removedPreceding, data.id, 'followingExperiments'),
+      _syncBackRef(addedFollowing, removedFollowing, data.id, 'precedingExperiments'),
+    ])
+
     return saved
   }, [])
 

@@ -432,6 +432,97 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
   )
 }
 
+// ── 연결 관계 그룹 ────────────────────────────────────────────
+
+function ConnectionGroup({ label, ids, allExperiments, excludeIds, onAdd, onRemove }) {
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    if (!searchOpen) return
+    function handler(e) {
+      if (containerRef.current?.contains(e.target)) return
+      setSearchOpen(false)
+      setQuery('')
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [searchOpen])
+
+  const filtered = allExperiments
+    .filter((exp) =>
+      !excludeIds.includes(exp.id) &&
+      (query === '' ||
+        exp.id.toLowerCase().includes(query.toLowerCase()) ||
+        (exp.title ?? '').toLowerCase().includes(query.toLowerCase()))
+    )
+    .slice(0, 10)
+
+  return (
+    <div>
+      <div className="text-xs font-medium text-gray-400 mb-1.5">{label}</div>
+      <div className="flex flex-wrap gap-1.5 items-center">
+        {ids.map((id) => {
+          const linked = allExperiments.find((e) => e.id === id)
+          return (
+            <span key={id} className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">
+              <span className="font-mono text-[10px] text-gray-400">{id}</span>
+              {linked?.title && <span className="max-w-[80px] truncate">{linked.title}</span>}
+              <button
+                type="button"
+                onClick={() => onRemove(id)}
+                className="text-gray-400 hover:text-red-500 transition-colors leading-none"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-2.5 h-2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
+          )
+        })}
+        <div ref={containerRef} className="relative">
+          <button
+            type="button"
+            onClick={() => { setSearchOpen((p) => !p); setQuery('') }}
+            className="text-xs text-gray-400 hover:text-blue-600 w-5 h-5 flex items-center justify-center rounded border border-dashed border-gray-300 hover:border-blue-400 transition-colors"
+          >
+            +
+          </button>
+          {searchOpen && (
+            <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg w-64">
+              <input
+                autoFocus
+                className="w-full px-3 py-2 text-xs border-b border-gray-100 outline-none rounded-t-lg"
+                placeholder="ID 또는 제목 검색"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <div className="max-h-44 overflow-y-auto">
+                {filtered.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-gray-400">결과 없음</div>
+                ) : (
+                  filtered.map((exp) => (
+                    <button
+                      key={exp.id}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors flex items-center gap-1.5"
+                      onClick={() => { onAdd(exp.id); setSearchOpen(false); setQuery('') }}
+                    >
+                      <span className="font-mono text-[10px] text-gray-400 shrink-0">{exp.id}</span>
+                      <span className="text-gray-700 truncate">{exp.title || '(제목 없음)'}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 절차 내용 여부 체크 ───────────────────────────────────────
 
 function isProcedureNonEmpty(doc) {
@@ -532,7 +623,7 @@ export default function ExperimentDetailPage() {
   const navigate = useNavigate()
   const { accessToken } = useAuth()
   const { folderMap } = useDrive()
-  const { isReady, getExperiment, updateExperiment, deleteExperiment } = useExperiments()
+  const { isReady, experiments, getExperiment, updateExperiment, deleteExperiment } = useExperiments()
 
   const [experiment, setExperiment] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -753,6 +844,33 @@ export default function ExperimentDetailPage() {
     window.print()
   }
 
+  // ── 연결 관계 ─────────────────────────────────────────────────
+  function _updateConnections(changes) {
+    update({ connections: { ...(latestRef.current?.connections ?? {}), ...changes } })
+  }
+
+  function addPrecedingExp(linkedId) {
+    const prev = latestRef.current?.connections?.precedingExperiments ?? []
+    if (prev.includes(linkedId)) return
+    _updateConnections({ precedingExperiments: [...prev, linkedId] })
+  }
+
+  function removePrecedingExp(linkedId) {
+    const prev = latestRef.current?.connections?.precedingExperiments ?? []
+    _updateConnections({ precedingExperiments: prev.filter((id) => id !== linkedId) })
+  }
+
+  function addFollowingExp(linkedId) {
+    const prev = latestRef.current?.connections?.followingExperiments ?? []
+    if (prev.includes(linkedId)) return
+    _updateConnections({ followingExperiments: [...prev, linkedId] })
+  }
+
+  function removeFollowingExp(linkedId) {
+    const prev = latestRef.current?.connections?.followingExperiments ?? []
+    _updateConnections({ followingExperiments: prev.filter((id) => id !== linkedId) })
+  }
+
   // ── 태그 ─────────────────────────────────────────────────────
   function addTag(raw) {
     const tag = raw.trim()
@@ -953,6 +1071,26 @@ export default function ExperimentDetailPage() {
         onChange={(e) => update({ title: e.target.value })}
         placeholder="실험 제목"
       />
+
+      {/* 연결 관계 */}
+      <div className="mb-5 space-y-3">
+        <ConnectionGroup
+          label="선행 실험"
+          ids={experiment.connections?.precedingExperiments ?? []}
+          allExperiments={experiments}
+          excludeIds={[experiment.id, ...(experiment.connections?.precedingExperiments ?? [])]}
+          onAdd={addPrecedingExp}
+          onRemove={removePrecedingExp}
+        />
+        <ConnectionGroup
+          label="후속 실험"
+          ids={experiment.connections?.followingExperiments ?? []}
+          allExperiments={experiments}
+          excludeIds={[experiment.id, ...(experiment.connections?.followingExperiments ?? [])]}
+          onAdd={addFollowingExp}
+          onRemove={removeFollowingExp}
+        />
+      </div>
 
       {/* 상태 + 날짜 */}
       <div className="flex items-center gap-3 mb-6">
