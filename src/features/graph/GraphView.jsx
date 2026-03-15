@@ -122,12 +122,12 @@ export default function GraphView() {
         id:   `group-bg-${group.id}`,
         type: 'groupBackground',
         position: { x: bounds.x, y: bounds.y },
-        style: { width: bounds.width, height: bounds.height, zIndex: -1 },
+        style: { width: bounds.width, height: bounds.height, zIndex: -10 },
         data: { name: group.name, color: group.color },
         draggable:   false,
         selectable:  false,
         connectable: false,
-        zIndex: -1,
+        zIndex: -10,
       }
     }).filter(Boolean)
   }, [groups, expNodes])

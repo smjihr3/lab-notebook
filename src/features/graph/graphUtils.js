@@ -4,14 +4,13 @@ export const STATUS_LABELS = {
   in_progress:  '진행중',
   data_pending: '데이터 대기',
   analyzing:    '분석중',
-  completed:    null,
 }
 
 export const OUTCOME_LABELS = {
   success: '성공',
   failed:  '실패',
-  partial: '부분성공',
-  unknown: '미정',
+  partial: '부분 성공',
+  unknown: '모름',
 }
 
 export const NODE_COLORS = {
@@ -28,13 +27,14 @@ export const NODE_COLORS = {
 
 export function getNodeStyle(experiment) {
   const { status, outcome } = experiment
-  const statusLabel = STATUS_LABELS[status] ?? null
 
   if (status === 'completed') {
     const colors = NODE_COLORS.completed[outcome] ?? NODE_COLORS.completed.unknown
+    const statusLabel = OUTCOME_LABELS[outcome] ?? OUTCOME_LABELS.unknown
     return { ...colors, statusLabel }
   }
 
+  const statusLabel = STATUS_LABELS[status] ?? status
   return { ...NODE_COLORS.default, statusLabel }
 }
 
@@ -75,7 +75,8 @@ export function experimentsToEdges(experiments) {
         source: precedingId,
         target: exp.id,
         type: 'smoothstep',
-        markerEnd: { type: 'arrowclosed' },
+        style: { stroke: '#475569', strokeWidth: 1.5, opacity: 0.7 },
+        markerEnd: { type: 'arrowclosed', color: '#475569' },
       })
     }
   }

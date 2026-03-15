@@ -19,8 +19,8 @@ export default function ExperimentNode({ data, selected }) {
           borderRadius: 12,
           color: text,
           boxShadow: selected
-            ? '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04), 0 0 0 3px rgba(59,130,246,0.15)'
-            : '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
+            ? '0 2px 8px rgba(0,0,0,0.13), 0 1px 3px rgba(0,0,0,0.08), 0 0 0 3px rgba(59,130,246,0.15)'
+            : '0 2px 8px rgba(0,0,0,0.13), 0 1px 3px rgba(0,0,0,0.08)',
           padding: '8px 12px',
           boxSizing: 'border-box',
           position: 'relative',
@@ -46,20 +46,18 @@ export default function ExperimentNode({ data, selected }) {
         <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.35 }}>
           {shortTitle}
         </div>
-        {statusLabel && (
-          <div style={{
-            fontSize: 10,
-            backgroundColor: '#f1f5f9',
-            color: '#64748b',
-            borderRadius: 6,
-            padding: '2px 7px',
-            display: 'inline-block',
-            alignSelf: 'flex-start',
-            marginTop: 2,
-          }}>
-            {statusLabel}
-          </div>
-        )}
+        <div style={{
+          fontSize: 10,
+          backgroundColor: '#f1f5f9',
+          color: '#64748b',
+          borderRadius: 6,
+          padding: '2px 7px',
+          display: 'inline-block',
+          alignSelf: 'flex-start',
+          marginTop: 2,
+        }}>
+          {statusLabel}
+        </div>
       </div>
 
       <Handle type="source" position={isLR ? Position.Right : Position.Bottom} />

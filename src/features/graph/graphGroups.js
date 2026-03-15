@@ -2,12 +2,12 @@ import { NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
 
 // ── 색상 팔레트 ────────────────────────────────────────────────
 export const GROUP_COLORS = [
-  { name: 'blue',   value: '#3b82f6' },
-  { name: 'green',  value: '#22c55e' },
-  { name: 'purple', value: '#a855f7' },
-  { name: 'orange', value: '#f97316' },
-  { name: 'red',    value: '#ef4444' },
-  { name: 'teal',   value: '#14b8a6' },
+  { name: 'blue',   value: '#93c5fd' },
+  { name: 'green',  value: '#86efac' },
+  { name: 'purple', value: '#c4b5fd' },
+  { name: 'orange', value: '#fdba74' },
+  { name: 'red',    value: '#fca5a5' },
+  { name: 'teal',   value: '#5eead4' },
 ]
 
 // ── 유틸 함수 ──────────────────────────────────────────────────
