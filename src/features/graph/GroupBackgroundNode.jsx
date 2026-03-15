@@ -18,8 +18,10 @@ export default function GroupBackgroundNode({ data }) {
 
   return (
     <svg
-      width={bounds.width}
-      height={bounds.height}
+      width="100%"
+      height="100%"
+      viewBox={`0 0 ${bounds.width} ${bounds.height}`}
+      preserveAspectRatio="none"
       style={{ overflow: 'visible', pointerEvents: 'none', display: 'block' }}
     >
       {polygons.map((pts, i) => (

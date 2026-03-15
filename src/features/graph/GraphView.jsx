@@ -160,12 +160,15 @@ export default function GraphView() {
       const nodeIds = resolveGroupNodeIds(group, fullList)
       const polygon = getGroupPolygon(nodeIds, expNodes)
       if (!polygon) return null
+      const { x, y, width, height } = polygon.bounds
       return {
-        id:   `group-bg-${group.id}`,
-        type: 'groupBackground',
-        position: { x: polygon.bounds.x, y: polygon.bounds.y },
-        style: { width: polygon.bounds.width, height: polygon.bounds.height, zIndex: -10 },
-        data: { name: group.name, color: group.color, polygons: polygon.polygons, bounds: polygon.bounds },
+        id:       `group-bg-${group.id}`,
+        type:     'groupBackground',
+        position: { x, y },
+        width,
+        height,
+        style:    { width, height, zIndex: -10 },
+        data:     { name: group.name, color: group.color, polygons: polygon.polygons, bounds: polygon.bounds },
         draggable:   false,
         selectable:  false,
         connectable: false,
