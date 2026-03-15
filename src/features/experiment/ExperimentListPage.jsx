@@ -33,8 +33,9 @@ export default function ExperimentListPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl">
-      <div className="flex items-center justify-between mb-6">
+    <div className="max-w-3xl">
+      {/* 상단 헤더 — sticky 고정, 어떤 상태와도 무관하게 항상 표시 */}
+      <div className="sticky top-0 z-10 bg-gray-50 px-6 pt-6 pb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">실험 노트</h1>
         <button
           onClick={() => navigate('/experiments/new')}
@@ -46,6 +47,7 @@ export default function ExperimentListPage() {
           새 실험 노트
         </button>
       </div>
+      <div className="px-6 pb-6">
 
       {isLoading ? (
         <div className="flex justify-center py-16">
@@ -139,6 +141,7 @@ export default function ExperimentListPage() {
           })}
         </ul>
       )}
+      </div>
     </div>
   )
 }
