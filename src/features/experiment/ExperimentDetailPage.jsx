@@ -664,7 +664,15 @@ export default function ExperimentDetailPage() {
         setDoiError('이미 추가된 DOI입니다.')
         return
       }
-      const newRef = { doi: result.doi, shortCitation: result.shortCitation }
+      const newRef = {
+        doi: result.doi,
+        shortCitation: result.shortCitation,
+        journal: result.journal,
+        year: result.year,
+        volume: result.volume,
+        issue: result.issue,
+        pages: result.pages,
+      }
       update({
         connections: {
           ...(latestRef.current?.connections ?? {}),
@@ -1018,9 +1026,19 @@ export default function ExperimentDetailPage() {
                 href={`https://doi.org/${ref.doi}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 min-w-0 text-blue-600 hover:underline break-all"
+                className="flex-1 min-w-0 text-blue-600 hover:underline"
               >
-                {ref.shortCitation || ref.doi}
+                {ref.journal || ref.year || ref.volume ? (
+                  <>
+                    {ref.journal && <em>{ref.journal}</em>}
+                    {ref.year   && <>, <strong>{ref.year}</strong></>}
+                    {ref.volume && <>, <em>{ref.volume}</em></>}
+                    {ref.issue  && <>, {ref.issue}</>}
+                    {ref.pages  && <>, {ref.pages}</>}
+                  </>
+                ) : (
+                  ref.shortCitation || ref.doi
+                )}
               </a>
               <button
                 type="button"
