@@ -320,7 +320,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         {blocks.map((block) => (
           <div
             key={block.id}
-            className="inline-flex flex-col border border-gray-200 rounded-lg bg-white"
+            className="inline-flex flex-col items-start border border-gray-200 rounded-lg bg-white"
             onPaste={(e) => handlePaste(e, block.id)}
           >
             {/* 이미지 영역 (이미지가 있을 때만 표시) */}
@@ -359,10 +359,10 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
             )}
 
             {/* 캡션 + 이미지 추가 버튼 + 블록 삭제 */}
-            <div className={`flex items-end gap-0.5 px-2 ${block.items.length > 0 ? 'border-t border-gray-100 py-1.5' : 'py-1.5'}`}>
+            <div className={`flex items-end gap-0.5 px-2 self-stretch ${block.items.length > 0 ? 'border-t border-gray-100 py-1.5' : 'py-1.5'}`}>
               <textarea
                 ref={(el) => { captionRefs.current[block.id] = el }}
-                className={`flex-1 text-xs text-gray-700 bg-transparent outline-none placeholder-gray-300 resize-none overflow-hidden leading-relaxed ${block.items.length === 0 ? 'min-w-[120px]' : 'min-w-0'}`}
+                className={`flex-1 text-xs text-gray-700 bg-transparent outline-none placeholder-gray-300 resize-none overflow-hidden leading-relaxed ${block.items.length === 0 ? 'min-w-[120px]' : 'min-w-0 w-0'}`}
                 value={block.caption ?? ''}
                 rows={1}
                 onChange={(e) => {
