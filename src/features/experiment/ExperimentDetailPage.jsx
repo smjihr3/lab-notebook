@@ -457,6 +457,13 @@ const STATUS_CLS = {
   completed:    'bg-green-100 text-green-700',
 }
 
+const OUTCOME_OPTIONS = [
+  { value: 'success', label: '성공',    cls: 'bg-green-100 text-green-700' },
+  { value: 'failed',  label: '실패',    cls: 'bg-red-100 text-red-700' },
+  { value: 'partial', label: '부분성공', cls: 'bg-orange-100 text-orange-700' },
+  { value: 'unknown', label: '미정',    cls: 'bg-gray-100 text-gray-600' },
+]
+
 // ── 툴바 버튼 ─────────────────────────────────────────────────
 
 function TBtn({ onClick, title, children, active }) {
@@ -540,9 +547,10 @@ export default function ExperimentDetailPage() {
 
   const latestRef = useRef(null)
   const statusManuallySetRef = useRef(false)
+  const skipBlockerRef = useRef(false)
 
   // ── 미저장 상태에서 이탈 차단 ────────────────────────────────
-  const blocker = useBlocker(isDirty)
+  const blocker = useBlocker(() => isDirty && !skipBlockerRef.current)
 
   // ── 수동 저장 ────────────────────────────────────────────────
   async function handleSave() {
@@ -705,7 +713,7 @@ export default function ExperimentDetailPage() {
     setDeleting(true)
     try {
       await deleteExperiment(experiment.id)
-      setIsDirty(false)   // blocker가 삭제 후 이동을 막지 않도록
+      skipBlockerRef.current = true  // blocker 비활성화 후 이동
       navigate('/experiments', { replace: true })
     } finally {
       setDeleting(false)
@@ -873,23 +881,36 @@ export default function ExperimentDetailPage() {
 
       {/* 상태 + 날짜 */}
       <div className="flex items-center gap-3 mb-6">
-        <select
-          value={experiment.status}
-          onChange={(e) => {
-            const val = e.target.value
-            if (val === 'completed') {
-              setOutcomePopup(true)
-            } else {
-              statusManuallySetRef.current = true
-              update({ status: val })
-            }
-          }}
-          className={`text-xs font-medium px-2.5 py-1 rounded-full border-none outline-none cursor-pointer ${STATUS_CLS[experiment.status] ?? 'bg-gray-100 text-gray-600'}`}
-        >
-          {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+        {experiment.status === 'completed' ? (
+          // completed 상태: outcome 라벨을 뱃지로 표시, 클릭 시 outcome 변경 팝업
+          <button
+            type="button"
+            onClick={() => setOutcomePopup(true)}
+            className={`text-xs font-medium px-2.5 py-1 rounded-full cursor-pointer transition-colors ${
+              OUTCOME_OPTIONS.find((o) => o.value === experiment.outcome)?.cls ?? 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            {OUTCOME_OPTIONS.find((o) => o.value === experiment.outcome)?.label ?? '미정'}
+          </button>
+        ) : (
+          <select
+            value={experiment.status}
+            onChange={(e) => {
+              const val = e.target.value
+              if (val === 'completed') {
+                setOutcomePopup(true)
+              } else {
+                statusManuallySetRef.current = true
+                update({ status: val })
+              }
+            }}
+            className={`text-xs font-medium px-2.5 py-1 rounded-full border-none outline-none cursor-pointer ${STATUS_CLS[experiment.status] ?? 'bg-gray-100 text-gray-600'}`}
+          >
+            {STATUS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        )}
         <span className="text-xs text-gray-400">
           {experiment.createdAt ? new Date(experiment.createdAt).toLocaleDateString('ko-KR') : ''}
         </span>

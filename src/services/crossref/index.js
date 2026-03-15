@@ -20,8 +20,9 @@ export async function fetchByDoi(doi) {
     })
     .filter(Boolean)
     .join('; ')
+  // 저널 축약명 우선, 없으면 전체명
   const journal =
-    msg['container-title']?.[0] ?? msg['short-container-title']?.[0] ?? ''
+    msg['short-container-title']?.[0] ?? msg['container-title']?.[0] ?? ''
   const year =
     msg.published?.['date-parts']?.[0]?.[0] ??
     msg['published-print']?.['date-parts']?.[0]?.[0] ??
@@ -31,12 +32,12 @@ export async function fetchByDoi(doi) {
   const issue = msg.issue ?? null
   const pages = msg.page ?? ''
 
-  // "저널, 연도, vol, issue(있을 때만), pages"
+  // "저널축약명, 연도, 권, 호(있을 때만), 페이지"
   const parts = [
     journal || null,
     year ? String(year) : null,
-    volume ? `vol. ${volume}` : null,
-    issue ? `no. ${issue}` : null,
+    volume || null,
+    issue || null,
     pages || null,
   ].filter(Boolean)
   const shortCitation = parts.join(', ')
