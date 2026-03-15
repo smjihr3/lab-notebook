@@ -1,8 +1,24 @@
 const OUTCOME_OPTIONS = [
-  { value: 'success', label: '성공',     cls: 'bg-green-500  hover:bg-green-600  text-white' },
-  { value: 'partial', label: '부분 성공', cls: 'bg-orange-500 hover:bg-orange-600 text-white' },
-  { value: 'failed',  label: '실패',     cls: 'bg-red-500    hover:bg-red-600    text-white' },
-  { value: 'unknown', label: '미정',     cls: 'bg-gray-400   hover:bg-gray-500   text-white' },
+  {
+    value: 'success',
+    label: '성공',
+    bg: '#dcfce7', border: '#16a34a', text: '#15803d', hoverBg: '#bbf7d0',
+  },
+  {
+    value: 'partial',
+    label: '부분 성공',
+    bg: '#ffedd5', border: '#f97316', text: '#c2410c', hoverBg: '#fed7aa',
+  },
+  {
+    value: 'failed',
+    label: '실패',
+    bg: '#fee2e2', border: '#ef4444', text: '#b91c1c', hoverBg: '#fecaca',
+  },
+  {
+    value: 'unknown',
+    label: '미정',
+    bg: '#f3f4f6', border: '#9ca3af', text: '#4b5563', hoverBg: '#e5e7eb',
+  },
 ]
 
 export default function OutcomePopup({ mode, currentOutcome, onSelect, onCancel }) {
@@ -15,19 +31,28 @@ export default function OutcomePopup({ mode, currentOutcome, onSelect, onCancel 
         <p className="text-xs text-gray-500 mb-4">실험 결과를 선택하세요.</p>
 
         <div className="flex flex-col gap-2 mb-4">
-          {OUTCOME_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => onSelect(opt.value)}
-              className={`py-2 text-xs font-medium rounded-lg transition-colors ${opt.cls} ${
-                mode === 'change' && currentOutcome === opt.value
-                  ? 'ring-2 ring-offset-1 ring-current'
-                  : ''
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {OUTCOME_OPTIONS.map((opt) => {
+            const isActive = mode === 'change' && currentOutcome === opt.value
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onSelect(opt.value)}
+                style={{
+                  backgroundColor: opt.bg,
+                  border: `1.5px solid ${opt.border}`,
+                  color: opt.text,
+                  borderRadius: 10,
+                  outline: isActive ? `3px solid ${opt.border}` : undefined,
+                  outlineOffset: isActive ? '2px' : undefined,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = opt.hoverBg }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = opt.bg }}
+                className="py-2 text-xs font-medium transition-colors"
+              >
+                {opt.label}
+              </button>
+            )
+          })}
         </div>
 
         <button
