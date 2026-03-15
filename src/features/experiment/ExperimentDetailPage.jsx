@@ -320,14 +320,14 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         {blocks.map((block) => (
           <div
             key={block.id}
-            className="flex flex-col border border-gray-200 rounded-lg bg-white w-fit"
+            className="inline-flex flex-col border border-gray-200 rounded-lg bg-white"
             onPaste={(e) => handlePaste(e, block.id)}
           >
             {/* 이미지 영역 (이미지가 있을 때만 표시) */}
             {block.items.length > 0 && (
               <div className="p-2 flex flex-wrap gap-2">
                 {block.items.map((item) => (
-                  <div key={item.id} className="relative group">
+                  <div key={item.id} className="relative group w-fit">
                     <DriveImage
                       fileId={item.driveFileId || null}
                       localUrl={localUrls[item.id] ?? null}
@@ -362,7 +362,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
             <div className={`flex items-end gap-0.5 px-2 ${block.items.length > 0 ? 'border-t border-gray-100 py-1.5' : 'py-1.5'}`}>
               <textarea
                 ref={(el) => { captionRefs.current[block.id] = el }}
-                className="flex-1 text-xs text-gray-700 bg-transparent outline-none placeholder-gray-300 min-w-[120px] resize-none overflow-hidden leading-relaxed"
+                className={`flex-1 text-xs text-gray-700 bg-transparent outline-none placeholder-gray-300 resize-none overflow-hidden leading-relaxed ${block.items.length === 0 ? 'min-w-[120px]' : 'min-w-0'}`}
                 value={block.caption ?? ''}
                 rows={1}
                 onChange={(e) => {
