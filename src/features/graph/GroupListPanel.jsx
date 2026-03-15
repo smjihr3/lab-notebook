@@ -71,7 +71,7 @@ function NewGroupForm({ experiments, onSubmit, onCancel }) {
       id: generateGroupId(groups),
       name: name.trim(),
       color,
-      startNodeId: startId,
+      startNodeIds: [startId],
       endNodeIds: endId ? [endId] : [],
     })
   }
@@ -126,16 +126,18 @@ function NewGroupForm({ experiments, onSubmit, onCancel }) {
 }
 
 function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove }) {
-  const { updateGroup } = useGraphGroups()
-  const [expanded, setExpanded]       = useState(false)
-  const [editingName, setEditingName] = useState(false)
-  const [nameVal, setNameVal]         = useState(group.name)
-  const [addingEnd, setAddingEnd]     = useState(false)
+  const { updateGroup, removeGroup } = useGraphGroups()
+  const [expanded, setExpanded]         = useState(false)
+  const [editingName, setEditingName]   = useState(false)
+  const [nameVal, setNameVal]           = useState(group.name)
+  const [addingEnd, setAddingEnd]       = useState(false)
+  const [addingStart, setAddingStart]   = useState(false)
 
-  const endNodeIds = group.endNodeIds ?? []
-  const nodeIds    = resolveGroupNodeIds(group, experiments)
-  const startExp   = experiments.find((e) => e.id === group.startNodeId)
-  const excludeIds = [group.startNodeId, ...endNodeIds]
+  const startNodeIds   = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
+  const endNodeIds     = group.endNodeIds   ?? []
+  const excludedNodeIds = group.excludedNodeIds ?? []
+  const nodeIds        = resolveGroupNodeIds(group, experiments)
+  const excludeIds     = [...startNodeIds, ...endNodeIds, ...excludedNodeIds]
 
   function handleFit() {
     const bounds = getGroupBounds(nodeIds, allNodes)
@@ -158,6 +160,25 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
 
   function handleRemoveEnd(id) {
     updateGroup(group.id, { endNodeIds: endNodeIds.filter((x) => x !== id) })
+  }
+
+  function handleAddStart(id) {
+    if (!id || startNodeIds.includes(id)) return
+    updateGroup(group.id, { startNodeIds: [...startNodeIds, id] })
+    setAddingStart(false)
+  }
+
+  function handleRemoveStart(id) {
+    const newIds = startNodeIds.filter((x) => x !== id)
+    if (newIds.length === 0) {
+      removeGroup(group.id)
+    } else {
+      updateGroup(group.id, { startNodeIds: newIds })
+    }
+  }
+
+  function handleRestoreExcluded(id) {
+    updateGroup(group.id, { excludedNodeIds: excludedNodeIds.filter((x) => x !== id) })
   }
 
   return (
@@ -198,11 +219,48 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
 
       {expanded && (
         <div className="px-4 pb-2 space-y-1.5">
-          {/* 시작 실험 */}
+          {/* 시작점 목록 */}
           <div className="text-xs text-gray-400">
-            시작: <span className="font-mono text-gray-600">{group.startNodeId}</span>
-            {startExp?.title && <span className="text-gray-500 ml-1">{startExp.title}</span>}
+            <div className="mb-0.5">시작점:</div>
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {startNodeIds.map((id) => {
+                const exp = experiments.find((e) => e.id === id)
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 bg-blue-50 rounded px-1.5 py-0.5 text-blue-700 font-mono text-xs"
+                  >
+                    {id}
+                    {exp?.title && (
+                      <span className="font-sans text-blue-500 truncate max-w-[56px]">{exp.title}</span>
+                    )}
+                    <button
+                      onClick={() => handleRemoveStart(id)}
+                      className="text-blue-300 hover:text-red-400 ml-0.5 leading-none"
+                    >×</button>
+                  </span>
+                )
+              })}
+            </div>
           </div>
+
+          {/* 시작점 추가 */}
+          {addingStart ? (
+            <ExperimentSearchInput
+              experiments={experiments}
+              excludeIds={excludeIds}
+              placeholder="시작점 추가..."
+              value={null}
+              onChange={(id) => handleAddStart(id)}
+            />
+          ) : (
+            <button
+              onClick={() => setAddingStart(true)}
+              className="text-xs text-blue-400 hover:text-blue-600"
+            >
+              + 시작점 추가
+            </button>
+          )}
 
           {/* 끝점 목록 */}
           <div className="text-xs text-gray-400">
@@ -249,6 +307,35 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove 
             >
               + 끝점 추가
             </button>
+          )}
+
+          {/* 제외된 노드 */}
+          {excludedNodeIds.length > 0 && (
+            <div className="text-xs text-gray-400">
+              <div className="mb-0.5">제외됨:</div>
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {excludedNodeIds.map((id) => {
+                  const exp = experiments.find((e) => e.id === id)
+                  return (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 bg-gray-50 rounded px-1.5 py-0.5 text-gray-400 font-mono text-xs line-through"
+                    >
+                      {id}
+                      {exp?.title && (
+                        <span className="font-sans truncate max-w-[56px] no-underline">{exp.title}</span>
+                      )}
+                      <button
+                        onClick={() => handleRestoreExcluded(id)}
+                        className="text-gray-300 hover:text-green-500 ml-0.5 leading-none no-underline"
+                        style={{ textDecoration: 'none' }}
+                        title="복구"
+                      >↩</button>
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
           )}
 
           <div className="text-xs text-gray-400">포함 실험: {nodeIds.size}개</div>

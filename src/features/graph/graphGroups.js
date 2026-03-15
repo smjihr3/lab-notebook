@@ -12,15 +12,23 @@ export const GROUP_COLORS = [
 
 // ── 스키마 마이그레이션 ───────────────────────────────────────
 /**
- * 구 스키마(endNodeId: string|null) → 신 스키마(endNodeIds: string[])
- * 이미 마이그레이션된 그룹은 그대로 반환.
+ * 구 스키마 → 신 스키마 변환:
+ *   startNodeId  → startNodeIds: string[]
+ *   endNodeId    → endNodeIds:   string[]
+ *   (신규) excludedNodeIds: string[]  기본 []
  */
 export function migrateGroup(group) {
-  if ('endNodeIds' in group) return group
-  return {
-    ...group,
-    endNodeIds: group.endNodeId ? [group.endNodeId] : [],
+  const g = { ...group }
+  if (!('startNodeIds' in g)) {
+    g.startNodeIds = g.startNodeId ? [g.startNodeId] : []
   }
+  if (!('endNodeIds' in g)) {
+    g.endNodeIds = g.endNodeId ? [g.endNodeId] : []
+  }
+  if (!('excludedNodeIds' in g)) {
+    g.excludedNodeIds = []
+  }
+  return g
 }
 
 export function migrateGroups(groups) {
@@ -30,25 +38,35 @@ export function migrateGroups(groups) {
 // ── 유틸 함수 ──────────────────────────────────────────────────
 
 /**
- * startNodeId에서 followingExperiments를 따라 BFS 탐색.
- * endNodeIds가 빈 배열이면 모든 하위 노드 포함 (열린 그룹).
- * endNodeIds에 값이 있으면:
- *   - endNodeIds에 속한 노드는 Set에 추가하되 자식 탐색 중단 (닫힘)
- *   - endNodeIds에 없는 분기는 계속 탐색 (열린 채로 유지)
+ * 각 startNodeIds에서 followingExperiments를 따라 BFS 탐색.
+ *
+ * endNodeIds: 해당 노드는 result에 추가하되 자식 탐색 중단 (닫힘).
+ *             빈 배열이면 열린 그룹 (모든 하위 탐색).
+ *
+ * excludedNodeIds: BFS에서 해당 노드를 건너뜀 (result에 추가 안 함, 자식 탐색 안 함).
+ *                  단, 다른 경로로 먼저 방문된 경우(수렴 경로)는 이미 result에 있으므로
+ *                  `result.has(id)` 체크가 먼저 걸려 중복 스킵됨.
+ *                  → 제외 노드의 하위 중 다른 경로로 도달 가능한 노드는 포함 유지.
+ *
  * @returns {Set<string>}
  */
 export function resolveGroupNodeIds(group, experiments) {
-  const expMap = Object.fromEntries(experiments.map((e) => [e.id, e]))
-  // 구 스키마(endNodeId) 호환 처리
-  const endSet = new Set(group.endNodeIds ?? (group.endNodeId ? [group.endNodeId] : []))
+  const expMap      = Object.fromEntries(experiments.map((e) => [e.id, e]))
+  const endSet      = new Set(group.endNodeIds      ?? (group.endNodeId      ? [group.endNodeId]      : []))
+  const excludedSet = new Set(group.excludedNodeIds ?? [])
+  // 구 스키마(startNodeId) 호환
+  const startIds    = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
 
   const result = new Set()
-  const fq = [group.startNodeId]
+  const fq = [...startIds]
+
   while (fq.length > 0) {
     const id = fq.shift()
     if (result.has(id)) continue
+    // 제외 노드: result에 추가하지 않고 자식도 탐색 안 함
+    if (excludedSet.has(id)) continue
     result.add(id)
-    // endNodeIds에 속한 노드: 포함하되 자식 탐색 중단
+    // endNodeIds 도달: result에 추가(확인) 후 자식 탐색 중단
     if (endSet.size > 0 && endSet.has(id)) continue
     const exp = expMap[id]
     if (!exp) continue

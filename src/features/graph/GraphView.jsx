@@ -25,7 +25,7 @@ const nodeTypes = {
 export default function GraphView() {
   const navigate = useNavigate()
   const { experiments, isReady, getExperiment, updateExperiment } = useExperiments()
-  const { groups, addGroup } = useGraphGroups()
+  const { groups, addGroup, updateGroup } = useGraphGroups()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -40,6 +40,7 @@ export default function GraphView() {
   const [groupCreatePopup, setGroupCreatePopup] = useState(false)
   const [groupCreateName, setGroupCreateName]   = useState('')
   const [groupCreateColor, setGroupCreateColor] = useState(GROUP_COLORS[0].value)
+  const [groupCreateTarget, setGroupCreateTarget] = useState('new') // 'new' | groupId
   const latestSelectionRef = useRef([])
 
   const fullDataRef   = useRef({})
@@ -50,7 +51,7 @@ export default function GraphView() {
 
   // ── 그룹 핀 정보 부여 ─────────────────────────────────────────
   function annotateGroupMarkers(nodeList) {
-    const startIds = new Set(groups.map((g) => g.startNodeId))
+    const startIds = new Set(groups.flatMap((g) => g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : [])))
     const endIds   = new Set(groups.flatMap((g) => g.endNodeIds ?? []))
     return nodeList.map((n) => ({
       ...n,
@@ -211,7 +212,6 @@ export default function GraphView() {
   }
 
   function handleGroupCreate() {
-    if (!groupCreateName.trim()) return
     const selectedIds = new Set(selectedForGroup.map((n) => n.id))
 
     // 루트: 선택 범위 내에 선행 실험이 없는 노드
@@ -226,20 +226,26 @@ export default function GraphView() {
       return (exp?.connections?.followingExperiments ?? []).every((id) => !selectedIds.has(id))
     })
 
-    const startNodeId = (roots[0] ?? selectedForGroup[0]).id
-    const endNodeIds  = leaves.map((n) => n.id)
+    const startNodeIds = roots.length > 0 ? roots.map((n) => n.id) : [selectedForGroup[0].id]
+    const endNodeIds   = leaves.map((n) => n.id)
 
-    addGroup({
-      id: generateGroupId(groups),
-      name: groupCreateName.trim(),
-      color: groupCreateColor,
-      startNodeId,
-      endNodeIds,
-    })
+    if (groupCreateTarget === 'new') {
+      if (!groupCreateName.trim()) return
+      addGroup({
+        id: generateGroupId(groups),
+        name: groupCreateName.trim(),
+        color: groupCreateColor,
+        startNodeIds,
+        endNodeIds,
+      })
+    } else {
+      updateGroup(groupCreateTarget, { startNodeIds, endNodeIds })
+    }
 
     setGroupCreatePopup(false)
     setSelectedForGroup([])
     setGroupCreateName('')
+    setGroupCreateTarget('new')
     setIsSelectMode(false)
     latestSelectionRef.current = []
   }
@@ -429,30 +435,48 @@ export default function GraphView() {
             className="bg-white rounded-xl shadow-xl border border-gray-200 p-4 space-y-3 w-64 pointer-events-auto"
             onMouseUp={(e) => e.stopPropagation()}
           >
-            <div className="text-sm font-semibold text-gray-700">그룹 생성</div>
+            <div className="text-sm font-semibold text-gray-700">그룹 지정</div>
             <div className="text-xs text-gray-400">{selectedForGroup.length}개 노드 선택됨</div>
-            <input
-              autoFocus
-              value={groupCreateName}
-              onChange={(e) => setGroupCreateName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleGroupCreate() }}
-              placeholder="그룹명"
-              className="w-full text-sm border border-gray-200 rounded px-3 py-1.5 outline-none focus:border-blue-400"
-            />
-            <div className="flex gap-1.5">
-              {GROUP_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  onClick={() => setGroupCreateColor(c.value)}
-                  style={{ backgroundColor: c.value }}
-                  className={`w-5 h-5 rounded-full transition-transform ${groupCreateColor === c.value ? 'ring-2 ring-offset-1 ring-gray-400 scale-110' : ''}`}
-                />
+
+            {/* 새 그룹 / 기존 그룹 선택 */}
+            <select
+              value={groupCreateTarget}
+              onChange={(e) => setGroupCreateTarget(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 outline-none focus:border-blue-400 bg-white"
+            >
+              <option value="new">새 그룹 생성</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
               ))}
-            </div>
+            </select>
+
+            {groupCreateTarget === 'new' && (
+              <>
+                <input
+                  autoFocus
+                  value={groupCreateName}
+                  onChange={(e) => setGroupCreateName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleGroupCreate() }}
+                  placeholder="그룹명"
+                  className="w-full text-sm border border-gray-200 rounded px-3 py-1.5 outline-none focus:border-blue-400"
+                />
+                <div className="flex gap-1.5">
+                  {GROUP_COLORS.map((c) => (
+                    <button
+                      key={c.value}
+                      onClick={() => setGroupCreateColor(c.value)}
+                      style={{ backgroundColor: c.value }}
+                      className={`w-5 h-5 rounded-full transition-transform ${groupCreateColor === c.value ? 'ring-2 ring-offset-1 ring-gray-400 scale-110' : ''}`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
             <div className="flex gap-2 pt-1">
               <button
                 onClick={handleGroupCreate}
-                disabled={!groupCreateName.trim()}
+                disabled={groupCreateTarget === 'new' && !groupCreateName.trim()}
                 className="flex-1 text-sm bg-blue-500 text-white rounded px-3 py-1.5 hover:bg-blue-600 disabled:opacity-40"
               >
                 확인
@@ -462,6 +486,7 @@ export default function GraphView() {
                   setGroupCreatePopup(false)
                   setSelectedForGroup([])
                   setGroupCreateName('')
+                  setGroupCreateTarget('new')
                   setIsSelectMode(false)
                   latestSelectionRef.current = []
                 }}
@@ -480,6 +505,7 @@ export default function GraphView() {
           x={contextMenu.x}
           y={contextMenu.y}
           experiment={contextMenu.experiment}
+          experiments={Object.values(fullDataRef.current)}
           onOpen={() => navigate(`/experiments/${contextMenu.experiment.id}`)}
           onComplete={() => setOutcomePopup({ mode: 'complete', experiment: contextMenu.experiment })}
           onChangeOutcome={() => setOutcomePopup({ mode: 'change', experiment: contextMenu.experiment })}

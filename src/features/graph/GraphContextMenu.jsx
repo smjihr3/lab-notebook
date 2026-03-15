@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useGraphGroups } from './GraphGroupProvider'
-import { generateGroupId, GROUP_COLORS } from './graphGroups'
+import { generateGroupId, GROUP_COLORS, resolveGroupNodeIds } from './graphGroups'
 
 const MENU_WIDTH = 200
 
 export default function GraphContextMenu({
-  x, y, experiment, onOpen, onComplete, onChangeOutcome, onClose,
+  x, y, experiment, experiments, onOpen, onComplete, onChangeOutcome, onClose,
 }) {
   const menuRef = useRef(null)
   const { groups, addGroup, updateGroup, removeGroup } = useGraphGroups()
 
-  // null | 'newGroup' | 'endTarget' | 'removeEnd'
+  // null | 'newGroup' | 'addStart' | 'removeStart' | 'endTarget' | 'removeEnd' | 'excludeFrom' | 'removeExclude'
   const [subMode, setSubMode] = useState(null)
   const [newGroupName, setNewGroupName]   = useState('')
   const [newGroupColor, setNewGroupColor] = useState(GROUP_COLORS[0].value)
@@ -28,12 +28,20 @@ export default function GraphContextMenu({
 
   const left = x + MENU_WIDTH > window.innerWidth ? x - MENU_WIDTH : x
 
-  const isStart = groups.some((g) => g.startNodeId === experiment.id)
-  const isEnd   = groups.some((g) => (g.endNodeIds ?? []).includes(experiment.id))
-  // 이 노드를 끝점으로 추가할 수 있는 그룹 (이미 끝점 아닌 것)
-  const eligibleGroups    = groups.filter((g) => !(g.endNodeIds ?? []).includes(experiment.id))
-  // 이 노드가 끝점인 그룹
-  const groupsWithThisEnd = groups.filter((g) => (g.endNodeIds ?? []).includes(experiment.id))
+  const getStartIds = (g) => g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : [])
+
+  const groupsWithThisStart   = groups.filter((g) => getStartIds(g).includes(experiment.id))
+  const isStart                = groupsWithThisStart.length > 0
+  const isEnd                  = groups.some((g) => (g.endNodeIds ?? []).includes(experiment.id))
+  const eligibleGroups         = groups.filter((g) => !(g.endNodeIds ?? []).includes(experiment.id))
+  const groupsWithThisEnd      = groups.filter((g) => (g.endNodeIds ?? []).includes(experiment.id))
+  const eligibleStartGroups    = groups.filter((g) => !getStartIds(g).includes(experiment.id))
+  const groupsExcludingNode    = groups.filter((g) => (g.excludedNodeIds ?? []).includes(experiment.id))
+  // 이 노드가 BFS 결과에 포함되고 아직 제외되지 않은 그룹
+  const groupsContainingNode   = groups.filter((g) => {
+    if ((g.excludedNodeIds ?? []).includes(experiment.id)) return false
+    return resolveGroupNodeIds(g, experiments ?? []).has(experiment.id)
+  })
 
   function handleAddGroup() {
     if (!newGroupName.trim()) return
@@ -41,7 +49,7 @@ export default function GraphContextMenu({
       id: generateGroupId(groups),
       name: newGroupName.trim(),
       color: newGroupColor,
-      startNodeId: experiment.id,
+      startNodeIds: [experiment.id],
       endNodeIds: [],
     })
     onClose()
@@ -64,9 +72,42 @@ export default function GraphContextMenu({
     onClose()
   }
 
-  function handleUnsetStart() {
-    const g = groups.find((g) => g.startNodeId === experiment.id)
-    if (g) removeGroup(g.id)
+  function handleAddStart(groupId) {
+    const g = groups.find((g) => g.id === groupId)
+    if (!g) return
+    const existing = getStartIds(g)
+    if (!existing.includes(experiment.id)) {
+      updateGroup(groupId, { startNodeIds: [...existing, experiment.id] })
+    }
+    onClose()
+  }
+
+  function handleUnsetStart(groupId) {
+    const g = groups.find((g) => g.id === groupId)
+    if (!g) return
+    const newIds = getStartIds(g).filter((id) => id !== experiment.id)
+    if (newIds.length === 0) {
+      removeGroup(g.id)
+    } else {
+      updateGroup(g.id, { startNodeIds: newIds })
+    }
+    onClose()
+  }
+
+  function handleExclude(groupId) {
+    const g = groups.find((g) => g.id === groupId)
+    if (!g) return
+    const existing = g.excludedNodeIds ?? []
+    if (!existing.includes(experiment.id)) {
+      updateGroup(groupId, { excludedNodeIds: [...existing, experiment.id] })
+    }
+    onClose()
+  }
+
+  function handleUnexclude(groupId) {
+    const g = groups.find((g) => g.id === groupId)
+    if (!g) return
+    updateGroup(groupId, { excludedNodeIds: (g.excludedNodeIds ?? []).filter((x) => x !== experiment.id) })
     onClose()
   }
 
@@ -101,7 +142,7 @@ export default function GraphContextMenu({
 
       <div className="my-1 border-t border-gray-100" />
 
-      {/* 그룹 시작점 지정 */}
+      {/* 새 그룹의 시작점으로 지정 */}
       {!isStart && (
         subMode === 'newGroup' ? (
           <div className="px-3 py-2 space-y-2">
@@ -133,12 +174,39 @@ export default function GraphContextMenu({
             className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
             onClick={() => setSubMode('newGroup')}
           >
-            그룹 시작점으로 지정
+            새 그룹의 시작점으로 지정
           </button>
         )
       )}
 
-      {/* 그룹 끝점 지정 */}
+      {/* 기존 그룹에 시작점 추가 */}
+      {eligibleStartGroups.length > 0 && (
+        subMode === 'addStart' ? (
+          <div className="px-3 py-2 space-y-1">
+            <div className="text-xs text-gray-400 mb-1">시작점 추가할 그룹:</div>
+            {eligibleStartGroups.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => handleAddStart(g.id)}
+                className="w-full text-left flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-gray-50"
+              >
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
+                <span className="truncate">{g.name}</span>
+              </button>
+            ))}
+            <button onClick={() => setSubMode(null)} className="text-xs text-gray-400 hover:text-gray-600 mt-1">취소</button>
+          </div>
+        ) : (
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            onClick={() => setSubMode('addStart')}
+          >
+            기존 그룹에 시작점 추가
+          </button>
+        )
+      )}
+
+      {/* 그룹 끝점으로 지정 */}
       {eligibleGroups.length > 0 && (
         subMode === 'endTarget' ? (
           <div className="px-3 py-2 space-y-1">
@@ -167,12 +235,36 @@ export default function GraphContextMenu({
 
       {/* 시작점 해제 */}
       {isStart && (
-        <button
-          className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
-          onClick={handleUnsetStart}
-        >
-          그룹 시작점 해제 (그룹 삭제)
-        </button>
+        subMode === 'removeStart' ? (
+          <div className="px-3 py-2 space-y-1">
+            <div className="text-xs text-gray-400 mb-1">시작점 해제할 그룹:</div>
+            {groupsWithThisStart.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => handleUnsetStart(g.id)}
+                className="w-full text-left flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-red-50"
+              >
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
+                <span className="truncate">{g.name}</span>
+              </button>
+            ))}
+            <button onClick={() => setSubMode(null)} className="text-xs text-gray-400 hover:text-gray-600 mt-1">취소</button>
+          </div>
+        ) : groupsWithThisStart.length === 1 ? (
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+            onClick={() => handleUnsetStart(groupsWithThisStart[0].id)}
+          >
+            그룹 시작점 해제{getStartIds(groupsWithThisStart[0]).length === 1 ? ' (그룹 삭제)' : ''}
+          </button>
+        ) : (
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+            onClick={() => setSubMode('removeStart')}
+          >
+            그룹 시작점 해제
+          </button>
+        )
       )}
 
       {/* 끝점 해제 */}
@@ -205,6 +297,67 @@ export default function GraphContextMenu({
             onClick={() => setSubMode('removeEnd')}
           >
             그룹 끝점 해제
+          </button>
+        )
+      )}
+
+      {/* 그룹에서 제외 */}
+      {groupsContainingNode.length > 0 && (
+        subMode === 'excludeFrom' ? (
+          <div className="px-3 py-2 space-y-1">
+            <div className="text-xs text-gray-400 mb-1">제외할 그룹:</div>
+            {groupsContainingNode.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => handleExclude(g.id)}
+                className="w-full text-left flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-red-50"
+              >
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
+                <span className="truncate">{g.name}</span>
+              </button>
+            ))}
+            <button onClick={() => setSubMode(null)} className="text-xs text-gray-400 hover:text-gray-600 mt-1">취소</button>
+          </div>
+        ) : (
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            onClick={() => setSubMode('excludeFrom')}
+          >
+            이 노드부터 그룹에서 제외
+          </button>
+        )
+      )}
+
+      {/* 그룹 제외 해제 */}
+      {groupsExcludingNode.length > 0 && (
+        subMode === 'removeExclude' ? (
+          <div className="px-3 py-2 space-y-1">
+            <div className="text-xs text-gray-400 mb-1">제외 해제할 그룹:</div>
+            {groupsExcludingNode.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => handleUnexclude(g.id)}
+                className="w-full text-left flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-green-50"
+              >
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
+                <span className="truncate">{g.name}</span>
+              </button>
+            ))}
+            <button onClick={() => setSubMode(null)} className="text-xs text-gray-400 hover:text-gray-600 mt-1">취소</button>
+          </div>
+        ) : groupsExcludingNode.length === 1 ? (
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors"
+            onClick={() => handleUnexclude(groupsExcludingNode[0].id)}
+          >
+            그룹 제외 해제
+          </button>
+        ) : (
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 transition-colors"
+            onClick={() => setSubMode('removeExclude')}
+          >
+            그룹 제외 해제
           </button>
         )
       )}
