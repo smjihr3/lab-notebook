@@ -69,7 +69,7 @@ export function ExperimentProvider({ children }) {
   async function _initStore(token, map) {
     setIsLoading(true)
     try {
-      // Load or create index file in LabNotebook root
+      // ── Phase 1: 인덱스 로드 (리스트 표시에 필요, 빠름) ──────
       const indexFile = await findFile(
         'experiments_index.json', map.root, 'application/json', token
       )
@@ -84,8 +84,11 @@ export function ExperimentProvider({ children }) {
       }
 
       _setExp(indexData)
+      // 인덱스 로드 완료 → 리스트 즉시 표시 가능
+      setIsReady(true)
+      setIsLoading(false)
 
-      // Auto-load recent 6 months into cache
+      // ── Phase 2: 최근 6개월 캐시 프리로드 (백그라운드, 리스트를 막지 않음) ──
       const cutoff = Date.now() - SIX_MONTHS_MS
       const recent = indexData.filter(
         (e) => e._fileId && e.createdAt && new Date(e.createdAt).getTime() >= cutoff
@@ -106,10 +109,9 @@ export function ExperimentProvider({ children }) {
         }
         _patchCache(newCache)
       }
-
-      setIsReady(true)
     } catch (err) {
       console.error('experimentStore init error:', err)
+      setIsReady(false)
     } finally {
       setIsLoading(false)
     }
