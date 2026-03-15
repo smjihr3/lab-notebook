@@ -137,8 +137,10 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showNavPopover, setShowNavPopover]   = useState(false)
 
-  const colorPickerRef = useRef(null)
-  const navPopoverRef  = useRef(null)
+  const colorPickerRef  = useRef(null)
+  const navBtnRef       = useRef(null)
+  const navPopoverRef   = useRef(null)
+  const [navPopoverPos, setNavPopoverPos] = useState({ top: 0, left: 0 })
 
   useEffect(() => {
     function h(e) { if (!colorPickerRef.current?.contains(e.target)) setShowColorPicker(false) }
@@ -147,7 +149,10 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
   }, [])
 
   useEffect(() => {
-    function h(e) { if (!navPopoverRef.current?.contains(e.target)) setShowNavPopover(false) }
+    function h(e) {
+      if (!navBtnRef.current?.contains(e.target) && !navPopoverRef.current?.contains(e.target))
+        setShowNavPopover(false)
+    }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [])
@@ -269,7 +274,7 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
         </div>
 
         {/* 그룹명 (클릭 → 이동 팝오버, 더블클릭 → 편집) */}
-        <div ref={navPopoverRef} className="flex-1 relative min-w-0">
+        <div className="flex-1 min-w-0">
           {editingName ? (
             <input
               autoFocus
@@ -281,38 +286,49 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
             />
           ) : (
             <button
+              ref={navBtnRef}
               className="w-full text-left text-sm font-semibold text-gray-700 truncate"
-              onClick={() => setShowNavPopover((v) => !v)}
+              onClick={() => {
+                if (!showNavPopover && navBtnRef.current) {
+                  const rect = navBtnRef.current.getBoundingClientRect()
+                  setNavPopoverPos({ top: rect.bottom + 4, left: rect.left })
+                }
+                setShowNavPopover((v) => !v)
+              }}
               onDoubleClick={() => { setShowNavPopover(false); setEditingName(true) }}
             >
               {group.name}
             </button>
           )}
-
-          {/* 이동 팝오버 */}
-          {showNavPopover && (
-            <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44">
-              <button
-                onClick={handleNavigateToStart}
-                className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                시작점으로 이동
-              </button>
-              <button
-                onClick={handleNavigateToEnd}
-                className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                {endpointIds.size > 0 ? '끝점으로 이동' : '가장 하위 노드로 이동'}
-              </button>
-              <button
-                onClick={handleNavigateToGroupBounds}
-                className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                그룹 전체 보기
-              </button>
-            </div>
-          )}
         </div>
+
+        {/* 이동 팝오버 (fixed 위치, overflow 클리핑 방지) */}
+        {showNavPopover && (
+          <div
+            ref={navPopoverRef}
+            style={{ position: 'fixed', top: navPopoverPos.top, left: navPopoverPos.left }}
+            className="z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44"
+          >
+            <button
+              onClick={handleNavigateToStart}
+              className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              시작점으로 이동
+            </button>
+            <button
+              onClick={handleNavigateToEnd}
+              className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              {endpointIds.size > 0 ? '끝점으로 이동' : '가장 하위 노드로 이동'}
+            </button>
+            <button
+              onClick={handleNavigateToGroupBounds}
+              className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              그룹 전체 보기
+            </button>
+          </div>
+        )}
 
         {/* 펼치기/접기 */}
         <button

@@ -58,12 +58,42 @@ export default function GraphContextMenu({
   }
 
   // 끝점 지정: followingExperiments 유무에 따라 blockedEdges / terminalNodeIds 분기
+  // 설정 전 역방향 BFS로 경로 위의 기존 blockedEdges를 제거
   function handleSetEnd(groupId) {
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
+
+    const startIds = new Set(g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : []))
+    const expMap   = Object.fromEntries((experiments ?? []).map((e) => [e.id, e]))
+
+    // 역방향 BFS: X에서 startNodeIds 방향으로 거슬러 올라가며
+    // 경로 위에 있는 blockedEdges를 수집하여 제거
+    const visited      = new Set()
+    const queue        = [experiment.id]
+    const edgesToRemove = new Set() // "from→to" 문자열
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()
+      if (visited.has(nodeId)) continue
+      visited.add(nodeId)
+      if (startIds.has(nodeId)) continue
+
+      const exp = expMap[nodeId]
+      for (const precId of exp?.connections?.precedingExperiments ?? []) {
+        if (visited.has(precId)) continue
+        if ((g.blockedEdges ?? []).some((e) => e.from === precId && e.to === nodeId)) {
+          edgesToRemove.add(`${precId}→${nodeId}`)
+        }
+        queue.push(precId)
+      }
+    }
+
+    const filteredBlockedEdges = (g.blockedEdges ?? []).filter(
+      (e) => !edgesToRemove.has(`${e.from}→${e.to}`)
+    )
+
     if (followers.length > 0) {
-      const existing = g.blockedEdges ?? []
-      const newEdges = [...existing]
+      const newEdges = [...filteredBlockedEdges]
       for (const followerId of followers) {
         if (!newEdges.some((e) => e.from === experiment.id && e.to === followerId)) {
           newEdges.push({ from: experiment.id, to: followerId })
@@ -72,9 +102,10 @@ export default function GraphContextMenu({
       updateGroup(groupId, { blockedEdges: newEdges })
     } else {
       const existing = g.terminalNodeIds ?? []
-      if (!existing.includes(experiment.id)) {
-        updateGroup(groupId, { terminalNodeIds: [...existing, experiment.id] })
-      }
+      updateGroup(groupId, {
+        blockedEdges: filteredBlockedEdges,
+        terminalNodeIds: existing.includes(experiment.id) ? existing : [...existing, experiment.id],
+      })
     }
     onClose()
   }
