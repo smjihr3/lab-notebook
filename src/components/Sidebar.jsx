@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../store/authStore.jsx'
 
 const navItems = [
   {
@@ -107,6 +108,8 @@ function NavItem({ item, mobile = false }) {
 }
 
 export default function Sidebar() {
+  const { user, logout } = useAuth()
+
   return (
     <>
       {/* 데스크탑 좌측 사이드바 */}
@@ -119,6 +122,31 @@ export default function Sidebar() {
             <NavItem key={item.path} item={item} />
           ))}
         </nav>
+
+        {/* 계정 정보 */}
+        {user && (
+          <div className="border-t border-gray-200 px-3 py-3">
+            <div className="flex items-center gap-2 mb-2">
+              {user.picture
+                ? <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full shrink-0" />
+                : <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-bold shrink-0">{user.name?.[0]}</div>
+              }
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-gray-900 truncate">{user.name}</p>
+                <p className="text-xs text-gray-400 truncate">{user.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+              </svg>
+              로그아웃
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* 모바일 하단 탭바 */}
