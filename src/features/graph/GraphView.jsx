@@ -4,25 +4,25 @@ import ReactFlow, {
   Background, Controls,
   useNodesState, useEdgesState, addEdge,
   MarkerType,
+  ReactFlowProvider,
 } from 'reactflow'
 import { useExperiments } from '../../store/experimentStore'
 import { experimentsToNodes, experimentsToEdges, getNodeStyle } from './graphUtils'
 import { applyDagreLayout } from './dagreLayout'
 import ExperimentNode from './ExperimentNode'
-import GroupBackgroundNode from './GroupBackgroundNode'
 import OutcomePopup from './OutcomePopup'
 import GraphContextMenu from './GraphContextMenu'
 import GraphSidePanel from './GraphSidePanel'
 import GroupListPanel from './GroupListPanel'
+import GroupOverlay from './GroupOverlay'
 import { useGraphGroups } from './GraphGroupProvider'
 import {
-  resolveGroupNodeIds, getGroupPolygon, generateGroupId, GROUP_COLORS,
+  resolveGroupNodeIds, generateGroupId, GROUP_COLORS,
   getGroupEndpointNodeIds, migrateGroupEndNodes, isEndNode,
 } from './graphGroups'
 
 const nodeTypes = {
-  experimentNode:  ExperimentNode,
-  groupBackground: GroupBackgroundNode,
+  experimentNode: ExperimentNode,
 }
 
 export default function GraphView() {
@@ -61,8 +61,13 @@ export default function GraphView() {
   const experimentsLoadedRef = useRef(false)
 
   useEffect(() => { groupsRef.current = groups }, [groups])
-
   useEffect(() => { layoutDirRef.current = layoutDir }, [layoutDir])
+
+  // ── 그룹 노드 ID 맵 (GroupOverlay에 전달) ─────────────────────
+  const groupNodeIdsMap = useMemo(() => {
+    const fullList = Object.values(fullDataRef.current)
+    return new Map(groups.map((g) => [g.id, resolveGroupNodeIds(g, fullList)]))
+  }, [groups, nodes])
 
   // ── 그룹 핀 정보 부여 ─────────────────────────────────────────
   function annotateGroupMarkers(nodeList) {
@@ -103,9 +108,7 @@ export default function GraphView() {
 
   // groups 변경 시 기존 노드에 핀 정보 재주입
   useEffect(() => {
-    setNodes((prev) => annotateGroupMarkers(
-      prev.filter((n) => n.type !== 'groupBackground')
-    ))
+    setNodes((prev) => annotateGroupMarkers(prev))
   }, [groups])
 
   // ── 전체 실험 데이터 로드 ─────────────────────────────────────
@@ -114,8 +117,7 @@ export default function GraphView() {
     Promise.all(experiments.map((e) => getExperiment(e.id).then((full) => full ?? e)))
       .then((fullList) => {
         const map = Object.fromEntries(fullList.map((e) => [e.id, e]))
-        // followingExperiments 역산: Drive에는 precedingExperiments만 저장되므로
-        // 로드 후 precedingExperiments를 뒤집어 followingExperiments를 재구성
+        // followingExperiments 역산
         for (const exp of fullList) {
           for (const precId of exp.connections?.precedingExperiments ?? []) {
             const src = map[precId]
@@ -148,37 +150,6 @@ export default function GraphView() {
       .catch(console.error)
   }, [isReady, experiments, getExperiment, rebuildLayout])
 
-  // ── 배경 노드 계산 ────────────────────────────────────────────
-  const expNodes = useMemo(
-    () => nodes.filter((n) => n.type !== 'groupBackground'),
-    [nodes]
-  )
-
-  const bgNodes = useMemo(() => {
-    const fullList = Object.values(fullDataRef.current)
-    return groups.map((group) => {
-      const nodeIds = resolveGroupNodeIds(group, fullList)
-      const polygon = getGroupPolygon(nodeIds, expNodes)
-      if (!polygon) return null
-      const { x, y, width, height } = polygon.bounds
-      return {
-        id:       `group-bg-${group.id}`,
-        type:     'groupBackground',
-        position: { x, y },
-        width,
-        height,
-        style:    { width, height, zIndex: -10 },
-        data:     { name: group.name, color: group.color, polygons: polygon.polygons, bounds: polygon.bounds },
-        draggable:   false,
-        selectable:  false,
-        connectable: false,
-        zIndex: -10,
-      }
-    }).filter(Boolean)
-  }, [groups, expNodes])
-
-  const displayNodes = useMemo(() => [...bgNodes, ...expNodes], [bgNodes, expNodes])
-
   // ── 레이아웃 조작 ─────────────────────────────────────────────
   function handleRelayout() { rebuildLayout(fullDataRef.current, layoutDirRef.current) }
 
@@ -199,7 +170,6 @@ export default function GraphView() {
 
   // ── 그룹 드래그 이동 ──────────────────────────────────────────
   const onNodeDragStop = useCallback((event, draggedNode) => {
-    if (draggedNode.type === 'groupBackground') return
     if (event.shiftKey) return
 
     const fullList = Object.values(fullDataRef.current)
@@ -210,8 +180,7 @@ export default function GraphView() {
     if (affectedGroups.length === 0) return
 
     setNodes((prev) => {
-      const expPrev = prev.filter((n) => n.type !== 'groupBackground')
-      const prevNode = expPrev.find((n) => n.id === draggedNode.id)
+      const prevNode = prev.find((n) => n.id === draggedNode.id)
       if (!prevNode) return prev
 
       const dx = draggedNode.position.x - prevNode.position.x
@@ -225,7 +194,6 @@ export default function GraphView() {
       moveIds.delete(draggedNode.id)
 
       return prev.map((n) => {
-        if (n.type === 'groupBackground') return n
         if (!moveIds.has(n.id)) return n
         return { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
       })
@@ -235,7 +203,7 @@ export default function GraphView() {
   // ── 드래그 박스 선택 ──────────────────────────────────────────
   const onSelectionChange = useCallback(({ nodes: selNodes }) => {
     if (!isSelectMode) return
-    latestSelectionRef.current = selNodes.filter((n) => n.type !== 'groupBackground')
+    latestSelectionRef.current = selNodes
   }, [isSelectMode])
 
   function handleContainerMouseUp() {
@@ -250,7 +218,6 @@ export default function GraphView() {
   function handleGroupCreate() {
     const selectedIds = new Set(selectedForGroup.map((n) => n.id))
 
-    // 루트: 선택 범위 내에 선행 실험이 없는 노드
     const roots = selectedForGroup.filter((n) => {
       const exp = fullDataRef.current[n.id]
       return (exp?.connections?.precedingExperiments ?? []).every((id) => !selectedIds.has(id))
@@ -258,7 +225,6 @@ export default function GraphView() {
 
     const startNodeIds = roots.length > 0 ? roots.map((n) => n.id) : [selectedForGroup[0].id]
 
-    // blockedEdges: 선택 범위 밖으로 나가는 간선 차단
     const blockedEdges = []
     for (const node of selectedForGroup) {
       const exp = fullDataRef.current[node.id]
@@ -269,7 +235,6 @@ export default function GraphView() {
       }
     }
 
-    // terminalNodeIds: 선택 범위 내에 후속 실험이 아예 없는 말단 노드
     const terminalNodeIds = selectedForGroup
       .filter((n) => (fullDataRef.current[n.id]?.connections?.followingExperiments ?? []).length === 0)
       .map((n) => n.id)
@@ -298,7 +263,6 @@ export default function GraphView() {
 
   // ── ReactFlow 이벤트 ──────────────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
-    if (node.type === 'groupBackground') return
     if (!isSelectMode) {
       setSelectedExp(node.data.experiment)
       setContextMenu(null)
@@ -306,7 +270,6 @@ export default function GraphView() {
   }, [isSelectMode])
 
   const onNodeContextMenu = useCallback((event, node) => {
-    if (node.type === 'groupBackground') return
     event.preventDefault()
     setContextMenu({ x: event.clientX, y: event.clientY, experiment: node.data.experiment })
   }, [])
@@ -371,17 +334,14 @@ export default function GraphView() {
     let blockedEdges    = [...(group.blockedEdges    ?? [])]
     let terminalNodeIds = [...(group.terminalNodeIds ?? [])]
 
-    // Case 1: X가 startNodeIds에 포함된 경우 → X 이후를 차단
     if (startNodeIds.includes(experimentId)) {
       if (followers.length > 0) {
-        // followingExperiments가 있으면 각각 blockedEdges에 추가
         for (const followerId of followers) {
           if (!blockedEdges.some((e) => e.from === experimentId && e.to === followerId)) {
             blockedEdges.push({ from: experimentId, to: followerId })
           }
         }
       } else {
-        // 말단 노드 → terminalNodeIds에 추가 (미래 연결도 차단)
         if (!terminalNodeIds.includes(experimentId)) {
           terminalNodeIds.push(experimentId)
         }
@@ -390,20 +350,16 @@ export default function GraphView() {
       return
     }
 
-    // Step 2: 그룹 내 부모 파악
     const groupParents = (expX?.connections?.precedingExperiments ?? [])
       .filter((id) => currentNodeIds.has(id))
     if (groupParents.length === 0) return
 
-    // Step 3: 그룹 내 부모 → X 간선을 blockedEdges에 추가
     for (const parentId of groupParents) {
       if (!blockedEdges.some((e) => e.from === parentId && e.to === experimentId)) {
         blockedEdges.push({ from: parentId, to: experimentId })
       }
     }
 
-    // Step 4: X 자체가 가지고 있던 blockedEdges/terminalNodeIds 제거
-    //         (X가 그룹에서 잘려나갔으므로 X 이후 차단 정보 불필요)
     blockedEdges    = blockedEdges.filter((e) => e.from !== experimentId)
     terminalNodeIds = terminalNodeIds.filter((id) => id !== experimentId)
 
@@ -487,41 +443,42 @@ export default function GraphView() {
     }
   }
 
-  // ── onNodesChange: 배경 노드 변경 무시 ────────────────────────
-  const handleNodesChange = useCallback((changes) => {
-    const filtered = changes.filter((c) => !c.id?.startsWith('group-bg-'))
-    if (filtered.length > 0) onNodesChange(filtered)
-  }, [onNodesChange])
-
   // ── 렌더 ──────────────────────────────────────────────────────
   return (
     <div className="w-full h-full relative" onMouseUp={handleContainerMouseUp}>
-      <ReactFlow
-        nodes={displayNodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={onNodeClick}
-        onNodeContextMenu={onNodeContextMenu}
-        onConnect={onConnect}
-        onPaneClick={onPaneClick}
-        onNodeDragStop={onNodeDragStop}
-        onSelectionChange={onSelectionChange}
-        onInit={(instance) => { rfInstanceRef.current = instance }}
-        selectionOnDrag={isSelectMode}
-        panOnDrag={!isSelectMode}
-        fitView
-        connectOnClick={false}
-      >
-        <Background />
-        <Controls />
-      </ReactFlow>
+
+      {/* ReactFlowProvider로 GroupOverlay와 ReactFlow의 store 공유 */}
+      <ReactFlowProvider>
+        {/* GroupOverlay: ReactFlow보다 DOM에서 먼저 → 노드 아래 렌더 */}
+        <GroupOverlay groups={groups} groupNodeIdsMap={groupNodeIdsMap} />
+
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onNodeContextMenu={onNodeContextMenu}
+          onConnect={onConnect}
+          onPaneClick={onPaneClick}
+          onNodeDragStop={onNodeDragStop}
+          onSelectionChange={onSelectionChange}
+          onInit={(instance) => { rfInstanceRef.current = instance }}
+          selectionOnDrag={isSelectMode}
+          panOnDrag={!isSelectMode}
+          fitView
+          connectOnClick={false}
+        >
+          <Background />
+          <Controls />
+        </ReactFlow>
+      </ReactFlowProvider>
 
       {/* 그룹 목록 패널 */}
       <GroupListPanel
         experiments={experiments}
-        allNodes={expNodes}
+        allNodes={nodes}
         setCenter={rfSetCenter}
         getZoom={rfGetZoom}
         getFullExperiments={() => Object.values(fullDataRef.current)}
@@ -581,7 +538,6 @@ export default function GraphView() {
             <div className="text-sm font-semibold text-gray-700">그룹 지정</div>
             <div className="text-xs text-gray-400">{selectedForGroup.length}개 노드 선택됨</div>
 
-            {/* 새 그룹 / 기존 그룹 선택 */}
             <select
               value={groupCreateTarget}
               onChange={(e) => setGroupCreateTarget(e.target.value)}
