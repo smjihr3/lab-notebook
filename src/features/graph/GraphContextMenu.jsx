@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useGraphGroups, generateGroupId, GROUP_COLORS } from './graphGroups'
+import { useGraphGroups } from './GraphGroupProvider'
+import { generateGroupId, GROUP_COLORS } from './graphGroups'
 
 const MENU_WIDTH = 200
 

@@ -14,7 +14,8 @@ import OutcomePopup from './OutcomePopup'
 import GraphContextMenu from './GraphContextMenu'
 import GraphSidePanel from './GraphSidePanel'
 import GroupListPanel from './GroupListPanel'
-import { useGraphGroups, resolveGroupNodeIds, getGroupBounds } from './graphGroups'
+import { useGraphGroups } from './GraphGroupProvider'
+import { resolveGroupNodeIds, getGroupBounds } from './graphGroups'
 
 const nodeTypes = {
   experimentNode:  ExperimentNode,

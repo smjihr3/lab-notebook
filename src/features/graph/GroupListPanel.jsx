@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { useGraphGroups, generateGroupId, resolveGroupNodeIds, getGroupBounds, GROUP_COLORS } from './graphGroups'
+import { useGraphGroups } from './GraphGroupProvider'
+import { generateGroupId, resolveGroupNodeIds, getGroupBounds, GROUP_COLORS } from './graphGroups'
 
 function ExperimentSearchInput({ experiments, excludeId, placeholder, value, onChange }) {
   const [query, setQuery] = useState('')
