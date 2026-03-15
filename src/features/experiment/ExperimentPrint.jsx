@@ -96,15 +96,24 @@ const PRINT_CSS = `
     line-height: 1.5;
   }
 
-  /* 우상단 메타 */
+  /* ── 헤더: 좌측 ID+제목, 우측 날짜 기입란 ── */
   .epp-meta {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: flex-start;
     margin-bottom: 5mm;
     font-size: 8pt;
     color: #333;
     line-height: 1.7;
+  }
+
+  .epp-meta-left {
+    /* ID + 제목 좌측 */
+  }
+
+  .epp-meta-right {
     text-align: right;
+    white-space: nowrap;
   }
 
   .epp-date-line {
@@ -115,18 +124,22 @@ const PRINT_CSS = `
     vertical-align: bottom;
   }
 
-  /* 섹션 박스 */
+  /* ── 섹션 박스: 각각 4변 완성된 독립 박스 ── */
   .epp-section {
     border: 1pt solid #555;
     padding: 8mm 10mm;
   }
 
+  /* 상단 박스: 기본 4변 테두리 */
   .epp-top {
-    border-bottom: none;
+    /* border는 .epp-section 상속 */
   }
 
+  /* 하단 박스: 독립 4변 테두리 + 위 여백 */
   .epp-bottom {
-    border-top: 2pt solid #111;
+    margin-top: 5mm;
+    break-before: auto;
+    break-inside: avoid;
   }
 
   .epp-section-label {
@@ -140,8 +153,10 @@ const PRINT_CSS = `
     border-bottom: 0.5pt solid #ccc;
   }
 
+  /* 섹션 단위 페이지 넘김 방지 */
   .epp-field {
     margin-bottom: 5mm;
+    break-inside: avoid;
   }
 
   .epp-field-label {
@@ -195,16 +210,28 @@ const PRINT_CSS = `
   .epp-text-block {
     break-inside: avoid;
     font-size: 9pt;
-    padding: 4px 0;
     color: #333;
     border-left: 2pt solid #ccc;
-    padding-left: 8px;
+    padding: 2px 0 2px 8px;
     margin-bottom: 4mm;
   }
 
-  /* 프린트 옵션 */
-  .exp-print-root[data-option="top-only"] .epp-bottom { display: none !important; visibility: hidden !important; }
-  .exp-print-root[data-option="bottom-only"] .epp-top { display: none !important; visibility: hidden !important; }
+  /* ── 프린트 옵션별 테두리 처리 ── */
+
+  /* 상단만: 상단 박스 4변 그대로, 하단 박스 숨김 */
+  .exp-print-root[data-option="top-only"] .epp-bottom {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 하단만: 하단 박스 4변 그대로 (margin-top 제거로 위치 보정), 상단 박스 숨김 */
+  .exp-print-root[data-option="bottom-only"] .epp-top {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  .exp-print-root[data-option="bottom-only"] .epp-bottom {
+    margin-top: 0;
+  }
 }
 `
 
@@ -219,17 +246,17 @@ export default function ExperimentPrint({ experiment, accessToken, printOption }
     <div className="exp-print-root" data-option={printOption ?? 'all'}>
       <style>{PRINT_CSS}</style>
 
-      {/* 우상단: 실험 ID · 제목 · 날짜 기입란 */}
+      {/* 헤더: 좌측 ID+제목 / 우측 날짜 기입란 */}
       <div className="epp-meta">
-        <div>
+        <div className="epp-meta-left">
           <div style={{ fontFamily: 'monospace', fontSize: '8pt', color: '#888' }}>
             {experiment.id}
           </div>
-          <div style={{ fontWeight: 700, fontSize: '10pt' }}>{experiment.title}</div>
-          <div>
-            실험 일자:
-            <span className="epp-date-line">&nbsp;</span>
-          </div>
+          <div style={{ fontWeight: 700, fontSize: '11pt' }}>{experiment.title}</div>
+        </div>
+        <div className="epp-meta-right">
+          실험 일자:
+          <span className="epp-date-line">&nbsp;</span>
         </div>
       </div>
 
