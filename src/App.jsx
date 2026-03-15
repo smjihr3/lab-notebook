@@ -1,13 +1,14 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { useAuth } from './store/authStore'
+import { useAuth } from './store/authStore.jsx'
 import { useDrive } from './store/driveStore'
 import Sidebar from './components/Sidebar'
 import LoginPage from './pages/LoginPage'
+import ExperimentListPage from './features/experiment/ExperimentListPage'
+import ExperimentDetailPage from './features/experiment/ExperimentDetailPage'
+import ExperimentNewPage from './features/experiment/ExperimentNewPage'
 import {
   DashboardPage,
-  ExperimentsPage,
-  ExperimentDetailPage,
   GraphPage,
   CalendarPage,
   BrowserPage,
@@ -60,7 +61,9 @@ function AppShell() {
         <main className="flex-1 overflow-auto pb-16 md:pb-0">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
-            <Route path="/experiments" element={<ExperimentsPage />} />
+            {/* /experiments/new 는 /:id 보다 앞에 위치 */}
+            <Route path="/experiments" element={<ExperimentListPage />} />
+            <Route path="/experiments/new" element={<ExperimentNewPage />} />
             <Route path="/experiments/:id" element={<ExperimentDetailPage />} />
             <Route path="/graph" element={<GraphPage />} />
             <Route path="/calendar" element={<CalendarPage />} />

@@ -1,12 +1,15 @@
 import { useGoogleLogin } from '@react-oauth/google'
-import { useAuth } from '../store/authStore'
+import { useAuth } from '../store/authStore.jsx'
 import { parseGoogleCredential } from '../services/auth'
 
 export default function LoginPage() {
   const { login } = useAuth()
 
   const handleLogin = useGoogleLogin({
-    scope: 'https://www.googleapis.com/auth/drive.file',
+    scope: [
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/drive.metadata.readonly',
+    ].join(' '),
     onSuccess: async (tokenResponse) => {
       // tokenResponse.access_token으로 유저 정보 조회
       const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {

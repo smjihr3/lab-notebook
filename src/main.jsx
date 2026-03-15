@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { GoogleOAuthProvider } from '@react-oauth/google'
-import { AuthProvider } from './store/authStore'
+import { AuthProvider } from './store/authStore.jsx'
 import { DriveProvider } from './store/driveStore'
 import './index.css'
 import App from './App.jsx'

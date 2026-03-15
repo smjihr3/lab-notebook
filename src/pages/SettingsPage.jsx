@@ -1,5 +1,5 @@
 import { useGoogleLogin } from '@react-oauth/google'
-import { useAuth } from '../store/authStore'
+import { useAuth } from '../store/authStore.jsx'
 
 export default function SettingsPage() {
   const { user, logout } = useAuth()
