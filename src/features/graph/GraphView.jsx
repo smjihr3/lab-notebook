@@ -62,25 +62,11 @@ export default function GraphView() {
       ...n,
       data: { ...n.data, layoutDirection: dir },
     }))
-    const rawEdges = experimentsToEdges(fullList)
+    const rawEdges = experimentsToEdges(fullList, dir)
     const laidOut  = applyDagreLayout(rawNodes, rawEdges, dir)
 
-    // LR 모드에서 같은 rank(x 좌표)의 노드 간 엣지는 직선으로
-    let finalEdges = rawEdges
-    if (dir === 'LR') {
-      const xByNode = Object.fromEntries(laidOut.map((n) => [n.id, n.position.x]))
-      finalEdges = rawEdges.map((e) => {
-        const sx = xByNode[e.source]
-        const tx = xByNode[e.target]
-        if (sx !== undefined && tx !== undefined && sx === tx) {
-          return { ...e, type: 'straight' }
-        }
-        return e
-      })
-    }
-
     setNodes(annotateGroupMarkers(laidOut))
-    setEdges(finalEdges)
+    setEdges(rawEdges)
   }, [groups]) // groups 변경 시 핀 재계산
 
   // groups 변경 시 기존 노드에 핀 정보 재주입

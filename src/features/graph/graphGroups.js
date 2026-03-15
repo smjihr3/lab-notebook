@@ -22,40 +22,21 @@ export function resolveGroupNodeIds(group, experiments) {
   const expMap = Object.fromEntries(experiments.map((e) => [e.id, e]))
 
   // 전방 BFS: startNodeId → followingExperiments
-  const forward = new Set()
+  // endNodeId 도달 시 해당 노드는 포함하되 자식 탐색 중단
+  const result = new Set()
   const fq = [group.startNodeId]
   while (fq.length > 0) {
     const id = fq.shift()
-    if (forward.has(id)) continue
-    forward.add(id)
+    if (result.has(id)) continue
+    result.add(id)
+    if (group.endNodeId && id === group.endNodeId) continue
     const exp = expMap[id]
     if (!exp) continue
     for (const nid of exp.connections?.followingExperiments ?? []) {
-      if (!forward.has(nid)) fq.push(nid)
+      if (!result.has(nid)) fq.push(nid)
     }
   }
 
-  if (!group.endNodeId) return forward
-
-  // 후방 BFS: endNodeId ← precedingExperiments
-  const backward = new Set()
-  const bq = [group.endNodeId]
-  while (bq.length > 0) {
-    const id = bq.shift()
-    if (backward.has(id)) continue
-    backward.add(id)
-    const exp = expMap[id]
-    if (!exp) continue
-    for (const pid of exp.connections?.precedingExperiments ?? []) {
-      if (!backward.has(pid)) bq.push(pid)
-    }
-  }
-
-  // 교집합 (start→end 경로상 노드)
-  const result = new Set()
-  for (const id of forward) {
-    if (backward.has(id)) result.add(id)
-  }
   return result
 }
 
