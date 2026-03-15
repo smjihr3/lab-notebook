@@ -5,8 +5,6 @@ import ReactFlow, {
   useNodesState, useEdgesState, addEdge,
   MarkerType,
 } from 'reactflow'
-import 'reactflow/dist/style.css'
-
 import { useExperiments } from '../../store/experimentStore'
 import { experimentsToNodes, experimentsToEdges, getNodeStyle } from './graphUtils'
 import { applyDagreLayout } from './dagreLayout'

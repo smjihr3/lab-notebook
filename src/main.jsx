@@ -5,6 +5,7 @@ import { AuthProvider } from './store/authStore.jsx'
 import { DriveProvider } from './store/driveStore'
 import { ExperimentProvider } from './store/experimentStore'
 import './index.css'
+import 'reactflow/dist/style.css'
 import App from './App.jsx'
 
 createRoot(document.getElementById('root')).render(
