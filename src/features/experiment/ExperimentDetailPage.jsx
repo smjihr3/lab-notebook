@@ -170,6 +170,8 @@ function AnalysisTypeBadge({ value, allTypes, onChange }) {
 function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
   const [localUrls, setLocalUrls] = useState({})
   const [lightbox, setLightbox] = useState(null)
+  const blocksRef = useRef(blocks)
+  useEffect(() => { blocksRef.current = blocks }, [blocks])
 
   const allTypes = (() => {
     const extra = new Set()
@@ -184,7 +186,9 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
   })()
 
   function _updateBlocks(updater) {
-    onChange(typeof updater === 'function' ? updater(blocks) : updater)
+    const newBlocks = typeof updater === 'function' ? updater(blocksRef.current) : updater
+    blocksRef.current = newBlocks
+    onChange(newBlocks)
   }
 
   function addBlock() {
@@ -828,7 +832,10 @@ export default function ExperimentDetailPage() {
       {/* 실험 절차 */}
       <div className="mb-6">
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">실험 절차</label>
-        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors">
+        <div
+          className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors cursor-text"
+          onClick={() => procedureEditor?.commands.focus()}
+        >
           <EditorToolbar editor={procedureEditor} />
           <EditorContent editor={procedureEditor} className={EDITOR_CONTENT_CLS} />
         </div>
@@ -846,7 +853,10 @@ export default function ExperimentDetailPage() {
       {/* 결론 */}
       <div className="mb-6">
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">결론</label>
-        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors">
+        <div
+          className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:border-blue-400 transition-colors cursor-text"
+          onClick={() => conclusionEditor?.commands.focus()}
+        >
           <EditorToolbar editor={conclusionEditor} />
           <EditorContent editor={conclusionEditor} className={EDITOR_CONTENT_CLS} />
         </div>
