@@ -1,9 +1,18 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useGraphGroups, generateGroupId, GROUP_COLORS } from './graphGroups'
 
-const MENU_WIDTH = 180
+const MENU_WIDTH = 200
 
-export default function GraphContextMenu({ x, y, experiment, onOpen, onComplete, onChangeOutcome, onClose }) {
+export default function GraphContextMenu({
+  x, y, experiment, onOpen, onComplete, onChangeOutcome, onClose,
+}) {
   const menuRef = useRef(null)
+  const { groups, addGroup, updateGroup, removeGroup } = useGraphGroups()
+
+  // 인라인 팝업 상태: null | 'newGroup' | 'endTarget'
+  const [subMode, setSubMode] = useState(null)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [newGroupColor, setNewGroupColor] = useState(GROUP_COLORS[0].value)
 
   useEffect(() => {
     function onMouseDown(e) {
@@ -21,6 +30,41 @@ export default function GraphContextMenu({ x, y, experiment, onOpen, onComplete,
   }, [onClose])
 
   const left = x + MENU_WIDTH > window.innerWidth ? x - MENU_WIDTH : x
+
+  // 이 노드가 start/end인 그룹
+  const isStart = groups.some((g) => g.startNodeId === experiment.id)
+  const isEnd   = groups.some((g) => g.endNodeId   === experiment.id)
+  // endNodeId === null인 열린 그룹 목록
+  const openGroups = groups.filter((g) => g.endNodeId === null)
+
+  function handleAddGroup() {
+    if (!newGroupName.trim()) return
+    addGroup({
+      id: generateGroupId(groups),
+      name: newGroupName.trim(),
+      color: newGroupColor,
+      startNodeId: experiment.id,
+      endNodeId: null,
+    })
+    onClose()
+  }
+
+  function handleSetEnd(groupId) {
+    updateGroup(groupId, { endNodeId: experiment.id })
+    onClose()
+  }
+
+  function handleUnsetStart() {
+    const g = groups.find((g) => g.startNodeId === experiment.id)
+    if (g) removeGroup(g.id)
+    onClose()
+  }
+
+  function handleUnsetEnd() {
+    const g = groups.find((g) => g.endNodeId === experiment.id)
+    if (g) updateGroup(g.id, { endNodeId: null })
+    onClose()
+  }
 
   return (
     <div
@@ -50,6 +94,103 @@ export default function GraphContextMenu({ x, y, experiment, onOpen, onComplete,
       >
         결과(Outcome) 변경
       </button>
+
+      {/* 구분선 */}
+      <div className="my-1 border-t border-gray-100" />
+
+      {/* 그룹 시작점 지정 */}
+      {!isStart && (
+        subMode === 'newGroup' ? (
+          <div className="px-3 py-2 space-y-2">
+            <input
+              autoFocus
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddGroup() }}
+              placeholder="그룹명"
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1 outline-none focus:border-blue-400"
+            />
+            <div className="flex gap-1.5">
+              {GROUP_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setNewGroupColor(c.value)}
+                  style={{ backgroundColor: c.value }}
+                  className={`w-5 h-5 rounded-full transition-transform ${newGroupColor === c.value ? 'ring-2 ring-offset-1 ring-gray-400 scale-110' : ''}`}
+                />
+              ))}
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleAddGroup}
+                className="flex-1 text-xs bg-blue-500 text-white rounded px-2 py-1 hover:bg-blue-600"
+              >
+                확인
+              </button>
+              <button
+                onClick={() => setSubMode(null)}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            onClick={() => setSubMode('newGroup')}
+          >
+            그룹 시작점으로 지정
+          </button>
+        )
+      )}
+
+      {/* 그룹 끝점 지정 */}
+      {!isEnd && openGroups.length > 0 && (
+        subMode === 'endTarget' ? (
+          <div className="px-3 py-2 space-y-1">
+            <div className="text-xs text-gray-400 mb-1">끝점으로 지정할 그룹:</div>
+            {openGroups.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => handleSetEnd(g.id)}
+                className="w-full text-left flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-gray-50"
+              >
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
+                <span className="truncate">{g.name}</span>
+              </button>
+            ))}
+            <button onClick={() => setSubMode(null)} className="text-xs text-gray-400 hover:text-gray-600 mt-1">
+              취소
+            </button>
+          </div>
+        ) : (
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            onClick={() => setSubMode('endTarget')}
+          >
+            그룹 끝점으로 지정
+          </button>
+        )
+      )}
+
+      {/* 해제 옵션 */}
+      {isStart && (
+        <button
+          className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+          onClick={handleUnsetStart}
+        >
+          그룹 시작점 해제 (그룹 삭제)
+        </button>
+      )}
+      {isEnd && (
+        <button
+          className="w-full text-left px-4 py-2 text-sm text-orange-500 hover:bg-orange-50 transition-colors"
+          onClick={handleUnsetEnd}
+        >
+          그룹 끝점 해제
+        </button>
+      )}
     </div>
   )
 }
