@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate, useBlocker } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -115,25 +116,44 @@ const DEFAULT_ANALYSIS_TYPES = ['PXRD', 'IR', 'NMR', 'OM', 'SEM', 'Photo', 'BET'
 function AnalysisTypeBadge({ value, allTypes, onChange }) {
   const [open, setOpen] = useState(false)
   const [customInput, setCustomInput] = useState('')
-  const ref = useRef(null)
+  const btnRef = useRef(null)
+  const dropRef = useRef(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
 
   useEffect(() => {
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    if (!open) return
+    function handler(e) {
+      if (btnRef.current?.contains(e.target) || dropRef.current?.contains(e.target)) return
+      setOpen(false)
+    }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [])
+  }, [open])
+
+  function toggle() {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      setPos({ top: rect.bottom + 4, left: rect.left })
+    }
+    setOpen((p) => !p)
+  }
 
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((p) => !p)}
-        className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium hover:bg-blue-200 transition-colors"
+        onClick={toggle}
+        className="text-xs px-2 py-0.5 rounded-full bg-black/50 text-white font-medium hover:bg-black/70 transition-colors backdrop-blur-sm"
       >
         {value}
       </button>
-      {open && (
-        <div className="absolute top-6 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 p-1.5 min-w-[120px]">
+      {open && createPortal(
+        <div
+          ref={dropRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+          className="bg-white border border-gray-200 rounded-lg shadow-lg p-1.5 min-w-[120px]"
+        >
           {allTypes.map((t) => (
             <button
               key={t}
@@ -144,9 +164,9 @@ function AnalysisTypeBadge({ value, allTypes, onChange }) {
               {t}
             </button>
           ))}
-          <div className="border-t border-gray-100 mt-1 pt-1 flex gap-1">
+          <div className="border-t border-gray-100 mt-1 pt-1">
             <input
-              className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-0.5 outline-none focus:border-blue-400"
+              className="w-full text-xs border border-gray-200 rounded px-1.5 py-0.5 outline-none focus:border-blue-400"
               placeholder="직접 입력"
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
@@ -159,9 +179,10 @@ function AnalysisTypeBadge({ value, allTypes, onChange }) {
               }}
             />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   )
 }
 
@@ -193,10 +214,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
 
   function addBlock() {
     const blockId = `block_${Date.now()}`
-    _updateBlocks((prev) => [
-      ...prev,
-      { id: blockId, groupLabel: '', items: [], interpretation: {} },
-    ])
+    _updateBlocks((prev) => [...prev, { id: blockId, caption: '', items: [] }])
   }
 
   function deleteBlock(blockId) {
@@ -204,9 +222,7 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
   }
 
   function updateBlock(blockId, changes) {
-    _updateBlocks((prev) =>
-      prev.map((b) => b.id === blockId ? { ...b, ...changes } : b)
-    )
+    _updateBlocks((prev) => prev.map((b) => b.id === blockId ? { ...b, ...changes } : b))
   }
 
   function updateItem(blockId, itemId, changes) {
@@ -236,17 +252,9 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
       const localUrl = URL.createObjectURL(file)
       setLocalUrls((prev) => ({ ...prev, [itemId]: localUrl }))
 
-      const newItem = {
-        id: itemId,
-        analysisType: 'PXRD',
-        driveFileId: '',
-        thumbnailUrl: '',
-        caption: '',
-      }
+      const newItem = { id: itemId, analysisType: 'PXRD', driveFileId: '', thumbnailUrl: '' }
       _updateBlocks((prev) =>
-        prev.map((b) => b.id !== blockId ? b : {
-          ...b, items: [...b.items, newItem],
-        })
+        prev.map((b) => b.id !== blockId ? b : { ...b, items: [...b.items, newItem] })
       )
 
       try {
@@ -269,13 +277,8 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
   }
 
   function handlePaste(e, blockId) {
-    const files = Array.from(e.clipboardData?.files ?? []).filter(
-      (f) => f.type.startsWith('image/')
-    )
-    if (files.length > 0) {
-      e.preventDefault()
-      handleImageFiles(files, blockId)
-    }
+    const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'))
+    if (files.length > 0) { e.preventDefault(); handleImageFiles(files, blockId) }
   }
 
   function handleFileInput(e, blockId) {
@@ -308,102 +311,87 @@ function DataBlocksSection({ blocks, onChange, accessToken, uploadFolderId }) {
         </div>
       )}
 
-      <div className="space-y-4">
+      {/* 블록 컨테이너: flex-wrap으로 가로 배치 */}
+      <div className="flex flex-wrap gap-3 items-start">
         {blocks.map((block) => (
           <div
             key={block.id}
-            className="border border-gray-200 rounded-xl bg-white overflow-hidden"
+            className="flex flex-col border border-gray-200 rounded-xl bg-white min-w-[200px]"
+            onPaste={(e) => handlePaste(e, block.id)}
           >
-            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
+            {/* 이미지 목록 + 추가 버튼 */}
+            <div className="p-2 flex flex-wrap gap-2">
+              {block.items.map((item) => (
+                <div key={item.id} className="relative group">
+                  <DriveImage
+                    fileId={item.driveFileId || null}
+                    localUrl={localUrls[item.id] ?? null}
+                    accessToken={accessToken}
+                    className="h-44 w-auto object-contain rounded border border-gray-200 bg-gray-50 cursor-zoom-in"
+                    onClick={(src) => setLightbox(src)}
+                  />
+                  {/* 분석 종류 라벨 — 좌상단 반투명 오버레이 */}
+                  <div className="absolute top-1 left-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                    <AnalysisTypeBadge
+                      value={item.analysisType}
+                      allTypes={allTypes}
+                      onChange={(t) => updateItem(block.id, item.id, { analysisType: t })}
+                    />
+                  </div>
+                  {/* 이미지 삭제 버튼 */}
+                  <button
+                    type="button"
+                    onClick={() => deleteItem(block.id, item.id)}
+                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 bg-white/80 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition-all"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+
+              {/* 이미지 추가 버튼 */}
+              <label className={`flex-shrink-0 flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors ${block.items.length === 0 ? 'h-32 w-44 px-4' : 'h-44 w-20'}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`text-gray-300 ${block.items.length === 0 ? 'w-7 h-7' : 'w-5 h-5'}`}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                </svg>
+                {block.items.length === 0 ? (
+                  <>
+                    <span className="text-xs text-gray-400">이미지 추가</span>
+                    <span className="text-xs text-gray-400">(선택)</span>
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-300">추가</span>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleFileInput(e, block.id)}
+                />
+              </label>
+            </div>
+
+            {/* 캡션 + 블록 삭제 */}
+            <div className="border-t border-gray-100 px-2 py-1.5 flex items-center gap-1">
               <input
-                className="flex-1 text-sm font-medium bg-transparent outline-none placeholder-gray-300 text-gray-700"
-                value={block.groupLabel}
-                onChange={(e) => updateBlock(block.id, { groupLabel: e.target.value })}
-                placeholder="그룹 이름 (예: 합성 조건 최적화)"
+                className="flex-1 text-xs text-gray-600 bg-transparent outline-none placeholder-gray-300 min-w-0"
+                value={block.caption ?? ''}
+                onChange={(e) => updateBlock(block.id, { caption: e.target.value })}
+                placeholder="캡션"
               />
               <button
                 type="button"
                 onClick={() => deleteBlock(block.id)}
-                className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                className="flex-shrink-0 p-1 text-gray-300 hover:text-red-400 transition-colors"
                 title="블록 삭제"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                 </svg>
               </button>
-            </div>
-
-            <div
-              className="p-3"
-              onPaste={(e) => handlePaste(e, block.id)}
-            >
-              {block.items.length === 0 ? (
-                <label className="flex flex-col items-center gap-2 border-2 border-dashed border-gray-200 rounded-lg p-6 cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7 text-gray-300">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-                  </svg>
-                  <span className="text-xs text-gray-400">클릭하여 이미지 선택 또는 붙여넣기</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => handleFileInput(e, block.id)}
-                  />
-                </label>
-              ) : (
-                <div className="flex gap-3 overflow-x-auto pb-2">
-                  {block.items.map((item) => (
-                    <div key={item.id} className="flex-shrink-0 flex flex-col gap-1.5">
-                      <div className="relative group">
-                        <DriveImage
-                          fileId={item.driveFileId || null}
-                          localUrl={localUrls[item.id] ?? null}
-                          accessToken={accessToken}
-                          className="h-44 w-auto object-contain rounded border border-gray-200 bg-gray-50 cursor-zoom-in"
-                          onClick={(src) => setLightbox(src)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => deleteItem(block.id, item.id)}
-                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 bg-white/80 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition-all"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-
-                      <AnalysisTypeBadge
-                        value={item.analysisType}
-                        allTypes={allTypes}
-                        onChange={(t) => updateItem(block.id, item.id, { analysisType: t })}
-                      />
-
-                      <input
-                        className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:border-blue-400 w-full max-w-[160px] transition-colors"
-                        value={item.caption}
-                        onChange={(e) => updateItem(block.id, item.id, { caption: e.target.value })}
-                        placeholder="캡션"
-                      />
-                    </div>
-                  ))}
-
-                  <label className="flex-shrink-0 flex flex-col items-center justify-center gap-1 border-2 border-dashed border-gray-200 rounded-lg h-44 w-20 cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-gray-300">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                    <span className="text-xs text-gray-300">추가</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => handleFileInput(e, block.id)}
-                    />
-                  </label>
-                </div>
-              )}
             </div>
           </div>
         ))}
