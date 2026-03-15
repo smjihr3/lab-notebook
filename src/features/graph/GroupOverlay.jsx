@@ -1,10 +1,8 @@
 import { useStore } from 'reactflow'
 import { NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
-import { computeGroupPolygon } from './computeGroupPolygon'
 
-// ── 메인 컴포넌트 ─────────────────────────────────────────────────
 // ReactFlowProvider 컨텍스트 안에서 useStore로 nodeInternals와
-// transform을 구독하여 pan/zoom 시 SVG polygon을 실시간 갱신.
+// transform을 구독하여 pan/zoom 시 그룹 배경을 실시간 갱신.
 export default function GroupOverlay({ groups, groupNodeIdsMap }) {
   // ReactFlow v11: state.transform = [translateX, translateY, zoom]
   const nodeInternals = useStore((s) => s.nodeInternals)
@@ -17,7 +15,7 @@ export default function GroupOverlay({ groups, groupNodeIdsMap }) {
           const nodeIds = groupNodeIdsMap.get(group.id)
           if (!nodeIds || nodeIds.size === 0) return null
           return (
-            <GroupShape
+            <GroupRect
               key={group.id}
               group={group}
               nodeIds={nodeIds}
@@ -31,40 +29,46 @@ export default function GroupOverlay({ groups, groupNodeIdsMap }) {
   )
 }
 
-// ── 그룹 도형 ────────────────────────────────────────────────────
-function GroupShape({ group, nodeIds, nodeInternals, transform }) {
+// ── 그룹 직사각형 배경 ───────────────────────────────────────────
+function GroupRect({ group, nodeIds, nodeInternals, transform }) {
   const [tx, ty, zoom] = transform
-  const w = NODE_WIDTH  * zoom
-  const h = NODE_HEIGHT * zoom
+  const w       = NODE_WIDTH  * zoom
+  const h       = NODE_HEIGHT * zoom
+  const padding = 24  // 화면 픽셀
 
-  // 각 노드의 화면 좌표 rect 구성 (padding 미포함 — computeGroupPolygon에 위임)
-  const rects = []
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+
   for (const nodeId of nodeIds) {
     const internal = nodeInternals.get(nodeId)
     if (!internal?.positionAbsolute) continue
-    const x = internal.positionAbsolute.x * zoom + tx
-    const y = internal.positionAbsolute.y * zoom + ty
-    rects.push({ x, y, w, h })
+    const sx = internal.positionAbsolute.x * zoom + tx
+    const sy = internal.positionAbsolute.y * zoom + ty
+    minX = Math.min(minX, sx)
+    minY = Math.min(minY, sy)
+    maxX = Math.max(maxX, sx + w)
+    maxY = Math.max(maxY, sy + h)
   }
-  if (rects.length === 0) return null
 
-  const padding = 16 * zoom
-  const polygon = computeGroupPolygon(rects, padding)
-  if (polygon.length === 0) return null
+  if (!isFinite(minX)) return null
 
-  const minX = Math.min(...polygon.map((p) => p.x))
-  const minY = Math.min(...polygon.map((p) => p.y))
+  minX -= padding
+  minY -= padding
+  maxX += padding
+  maxY += padding
 
   return (
     <g>
-      <polygon
-        points={polygon.map((p) => `${p.x},${p.y}`).join(' ')}
+      <rect
+        x={minX}
+        y={minY}
+        width={maxX - minX}
+        height={maxY - minY}
+        rx={10}
         fill={group.color}
         fillOpacity={0.15}
         stroke={group.color}
         strokeWidth={2}
         strokeDasharray="6 3"
-        strokeLinejoin="round"
       />
       <text
         x={minX + 8}

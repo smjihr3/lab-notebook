@@ -8,7 +8,7 @@ import ReactFlow, {
 } from 'reactflow'
 import { useExperiments } from '../../store/experimentStore'
 import { experimentsToNodes, experimentsToEdges, getNodeStyle } from './graphUtils'
-import { applyDagreLayout } from './dagreLayout'
+import { applyDagreLayout, NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
 import ExperimentNode from './ExperimentNode'
 import OutcomePopup from './OutcomePopup'
 import GraphContextMenu from './GraphContextMenu'
@@ -59,6 +59,7 @@ export default function GraphView() {
   const groupsRef          = useRef(groups)
   const migrationDoneRef   = useRef(false)
   const experimentsLoadedRef = useRef(false)
+  const isLayoutingRef     = useRef(false)
 
   useEffect(() => { groupsRef.current = groups }, [groups])
   useEffect(() => { layoutDirRef.current = layoutDir }, [layoutDir])
@@ -100,16 +101,63 @@ export default function GraphView() {
     }))
     const rawEdges = experimentsToEdges(fullList)
     const groupNodeSets = groupsRef.current.map((g) => resolveGroupNodeIds(g, fullList))
+    isLayoutingRef.current = true
     const laidOut  = applyDagreLayout(rawNodes, rawEdges, dir, groupNodeSets)
 
     setNodes(annotateGroupMarkers(laidOut))
     setEdges(rawEdges)
+    isLayoutingRef.current = false
   }, [groups])
 
   // groups 변경 시 기존 노드에 핀 정보 재주입
   useEffect(() => {
     setNodes((prev) => annotateGroupMarkers(prev))
   }, [groups])
+
+  // ── 그룹 미포함 노드 자동 밀어내기 ───────────────────────────
+  useEffect(() => {
+    if (isLayoutingRef.current) return
+    if (nodes.length === 0 || groups.length === 0) return
+    const PADDING = 24, MARGIN = 16
+    const fullList = Object.values(fullDataRef.current)
+    const groupBoxes = groups.map((group) => {
+      const ids = resolveGroupNodeIds(group, fullList)
+      const groupNodes = nodes.filter((n) => ids.has(n.id))
+      if (groupNodes.length === 0) return null
+      return {
+        ids,
+        minX: Math.min(...groupNodes.map((n) => n.position.x)) - PADDING,
+        minY: Math.min(...groupNodes.map((n) => n.position.y)) - PADDING,
+        maxX: Math.max(...groupNodes.map((n) => n.position.x + NODE_WIDTH)) + PADDING,
+        maxY: Math.max(...groupNodes.map((n) => n.position.y + NODE_HEIGHT)) + PADDING,
+      }
+    }).filter(Boolean)
+    if (groupBoxes.length === 0) return
+
+    let anyChange = false
+    const updated = nodes.map((node) => {
+      let { x, y } = node.position
+      for (const box of groupBoxes) {
+        if (box.ids.has(node.id)) continue
+        const overlapX = Math.min(x + NODE_WIDTH, box.maxX) - Math.max(x, box.minX)
+        const overlapY = Math.min(y + NODE_HEIGHT, box.maxY) - Math.max(y, box.minY)
+        if (overlapX <= 0 || overlapY <= 0) continue
+        if (overlapX <= overlapY) {
+          x = (x + NODE_WIDTH / 2) < (box.minX + box.maxX) / 2
+            ? box.minX - NODE_WIDTH - MARGIN
+            : box.maxX + MARGIN
+        } else {
+          y = (y + NODE_HEIGHT / 2) < (box.minY + box.maxY) / 2
+            ? box.minY - NODE_HEIGHT - MARGIN
+            : box.maxY + MARGIN
+        }
+        anyChange = true
+      }
+      if (x === node.position.x && y === node.position.y) return node
+      return { ...node, position: { x, y } }
+    })
+    if (anyChange) setNodes(updated)
+  }, [nodes, groups])
 
   // ── 전체 실험 데이터 로드 ─────────────────────────────────────
   useEffect(() => {
