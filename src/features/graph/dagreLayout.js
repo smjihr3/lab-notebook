@@ -3,17 +3,18 @@ import dagre from 'dagre'
 export const NODE_WIDTH  = 180
 export const NODE_HEIGHT = 64
 
-const NODESEP = 80
+const NODESEP = 60
+const RANKSEP = 100
 
 export function applyDagreLayout(nodes, edges, direction = 'TB', groupNodeSets = []) {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({
-    rankdir: direction,
-    nodesep: NODESEP,
-    ranksep: 80,
-    align: 'UL',
-    ranker: 'tight-tree',
+    rankdir:   direction,
+    nodesep:   NODESEP,
+    ranksep:   RANKSEP,
+    ranker:    'network-simplex',
+    acyclicer: 'greedy',
   })
 
   for (const node of nodes) {
@@ -39,9 +40,9 @@ export function applyDagreLayout(nodes, edges, direction = 'TB', groupNodeSets =
     }
   })
 
-  // LR 모드: 같은 x(rank) 그룹 내 노드를 균등 간격으로 재정렬
+  // LR 모드: dagre 원본 순서를 유지하면서 겹침만 방지
   if (direction === 'LR') {
-    respaceLRColumns(layouted)
+    spreadLRColumns(layouted)
 
     // 그룹별 column 압축 후처리
     if (groupNodeSets.length > 0) {
@@ -52,21 +53,24 @@ export function applyDagreLayout(nodes, edges, direction = 'TB', groupNodeSets =
   return layouted
 }
 
-// ── LR 균등 y 간격 재정렬 ────────────────────────────────────────
-function respaceLRColumns(layouted) {
+// ── LR 겹침 방지 (순서는 dagre 원본 유지) ────────────────────────
+function spreadLRColumns(layouted) {
   const colMap = new Map()
   for (const node of layouted) {
     const rx = Math.round(node.position.x)
     if (!colMap.has(rx)) colMap.set(rx, [])
     colMap.get(rx).push(node)
   }
-  const step = NODE_HEIGHT + NODESEP
+  const minGap = NODE_HEIGHT + NODESEP
   for (const col of colMap.values()) {
     if (col.length <= 1) continue
     col.sort((a, b) => a.position.y - b.position.y)
-    col.forEach((node, i) => {
-      node.position = { ...node.position, y: i * step }
-    })
+    for (let i = 1; i < col.length; i++) {
+      const minY = col[i - 1].position.y + minGap
+      if (col[i].position.y < minY) {
+        col[i].position = { ...col[i].position, y: minY }
+      }
+    }
   }
 }
 
@@ -107,7 +111,6 @@ function compactGroupColumns(layouted, edges, groupNodeSets) {
     const interloperXs = allX.filter((x) => {
       if (x <= minGroupX || x >= maxGroupX) return false
       if (groupXSet.has(x)) return false
-      // 이 열의 모든 노드가 비그룹인지 확인
       return layouted.filter((n) => Math.round(n.position.x) === x).every((n) => !groupIds.has(n.id))
     })
 
@@ -131,6 +134,6 @@ function compactGroupColumns(layouted, edges, groupNodeSets) {
     }
   }
 
-  // 열 이동 후 y 간격 재정렬
-  respaceLRColumns(layouted)
+  // 열 이동 후 겹침 방지 (순서 유지)
+  spreadLRColumns(layouted)
 }
