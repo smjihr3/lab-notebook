@@ -69,7 +69,7 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
         // 케이스 A: 단순 후행
         caseLabel = 'A'
         const parentNode = currentNodes.find((n) => n.id === parentInGroup)
-        x = Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
+        x = Math.ceil(maxX / GRID_SNAP_X) * GRID_SNAP_X
         y = parentNode ? parentNode.position.y : y
       } else if (parentInGroup && isBranch) {
         // 케이스 B: 분기 후행
@@ -80,7 +80,7 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
           ? siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length
           : maxX + 24 + GRID_SNAP_X
         x = Math.round(avgX / GRID_SNAP_X) * GRID_SNAP_X
-        y = Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
+        y = Math.ceil(maxY / GRID_SNAP_Y) * GRID_SNAP_Y
 } else if (childInGroup && !parentInGroup) {
         // 케이스 C: 선행
         caseLabel = 'C'

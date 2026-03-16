@@ -54,7 +54,7 @@ function computeReshiftPositions(excludedNodeId, updatedGroupNodeIds, currentNod
   if (remainingSiblings.length === 0) return new Map()
 
   // 3. X보다 y가 큰 형제만 위로 당김
-  const lowerSiblings = remainingSiblings.filter((s) => s.position.y > xY)
+  const lowerSiblings = remainingSiblings.filter((s) => s.position.y >= xY)
   if (lowerSiblings.length === 0) return new Map()
 
   // BFS: 그룹 내 서브트리 수집
@@ -96,7 +96,6 @@ function computeReshiftPositions(excludedNodeId, updatedGroupNodeIds, currentNod
     currentY += subtreeHeight
   }
 
-  console.log('[reshift] 이동대상', [...updatedPositions.entries()])
   return updatedPositions
 }
 
@@ -766,7 +765,7 @@ export default function GraphView() {
         const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
         const nodesAfterReshift = nodes.map((n) => { const p = reshiftMap.get(n.id); return p ? { ...n, position: p } : n })
         const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
-        const merged      = new Map([...pushOutMap, ...reshiftMap])
+        const merged      = new Map([...reshiftMap, ...pushOutMap])
         if (merged.size > 0) {
           setNodes((prev) => prev.map((n) => {
             const pos = merged.get(n.id)
@@ -843,7 +842,7 @@ export default function GraphView() {
       const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
       const nodesAfterReshift = nodes.map((n) => { const p = reshiftMap.get(n.id); return p ? { ...n, position: p } : n })
       const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
-      const merged      = new Map([...pushOutMap, ...reshiftMap])
+      const merged      = new Map([...reshiftMap, ...pushOutMap])
       if (merged.size > 0) {
         setNodes((prev) => prev.map((n) => {
           const pos = merged.get(n.id)
