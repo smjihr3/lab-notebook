@@ -3,7 +3,8 @@ import { NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
 
 // ReactFlowProvider 컨텍스트 안에서 useStore로 nodeInternals와
 // transform을 구독하여 pan/zoom 시 그룹 배경을 실시간 갱신.
-export default function GroupOverlay({ groups, groupNodeIdsMap, onGroupContextMenu }) {
+// 순수 비주얼 컴포넌트 — 이벤트 처리는 GraphView의 onPaneContextMenu에서 담당.
+export default function GroupOverlay({ groups, groupNodeIdsMap }) {
   // ReactFlow v11: state.transform = [translateX, translateY, zoom]
   const nodeInternals = useStore((s) => s.nodeInternals)
   const transform     = useStore((s) => s.transform)
@@ -21,7 +22,6 @@ export default function GroupOverlay({ groups, groupNodeIdsMap, onGroupContextMe
               nodeIds={nodeIds}
               nodeInternals={nodeInternals}
               transform={transform}
-              onContextMenu={onGroupContextMenu}
             />
           )
         })}
@@ -31,7 +31,7 @@ export default function GroupOverlay({ groups, groupNodeIdsMap, onGroupContextMe
 }
 
 // ── 그룹 직사각형 배경 ───────────────────────────────────────────
-function GroupRect({ group, nodeIds, nodeInternals, transform, onContextMenu }) {
+function GroupRect({ group, nodeIds, nodeInternals, transform }) {
   const [tx, ty, zoom] = transform
   const w       = NODE_WIDTH  * zoom
   const h       = NODE_HEIGHT * zoom
@@ -70,12 +70,6 @@ function GroupRect({ group, nodeIds, nodeInternals, transform, onContextMenu }) 
         stroke={group.color}
         strokeWidth={2}
         strokeDasharray="6 3"
-        style={{ pointerEvents: 'all', cursor: 'context-menu' }}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          onContextMenu?.(group.id, e.clientX, e.clientY)
-        }}
       />
       <text
         x={minX + 8}

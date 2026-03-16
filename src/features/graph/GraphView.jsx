@@ -539,8 +539,40 @@ export default function GraphView() {
 
   const onNodeContextMenu = useCallback((event, node) => {
     event.preventDefault()
+    setGroupContextMenu(null)
     setContextMenu({ x: event.clientX, y: event.clientY, experiment: node.data.experiment })
   }, [])
+
+  // 그룹 배경 우클릭: pane 이벤트로 받아 플로우 좌표 히트테스트
+  // (GroupOverlay는 ReactFlow pane 아래에 렌더되어 직접 이벤트를 받을 수 없음)
+  const onPaneContextMenu = useCallback((event) => {
+    event.preventDefault()
+    const rf = rfInstanceRef.current
+    if (!rf) return
+    const flowPos = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    const zoom    = rf.getZoom()
+    const PADDING = 24 / zoom  // 화면 24px → 플로우 좌표
+
+    for (const group of groups) {
+      const nodeIds = groupNodeIdsMap.get(group.id)
+      if (!nodeIds || nodeIds.size === 0) continue
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const node of nodes) {
+        if (!nodeIds.has(node.id)) continue
+        minX = Math.min(minX, node.position.x)
+        minY = Math.min(minY, node.position.y)
+        maxX = Math.max(maxX, node.position.x + NODE_WIDTH)
+        maxY = Math.max(maxY, node.position.y + NODE_HEIGHT)
+      }
+      if (!isFinite(minX)) continue
+      minX -= PADDING; minY -= PADDING; maxX += PADDING; maxY += PADDING
+      if (flowPos.x >= minX && flowPos.x <= maxX && flowPos.y >= minY && flowPos.y <= maxY) {
+        setContextMenu(null)
+        setGroupContextMenu({ groupId: group.id, x: event.clientX, y: event.clientY })
+        return
+      }
+    }
+  }, [groups, groupNodeIdsMap, nodes])
 
   const onPaneClick = useCallback((event) => {
     setContextMenu(null)
@@ -858,14 +890,7 @@ export default function GraphView() {
       {/* ReactFlowProvider로 GroupOverlay와 ReactFlow의 store 공유 */}
       <ReactFlowProvider>
         {/* GroupOverlay: ReactFlow보다 DOM에서 먼저 → 노드 아래 렌더 */}
-        <GroupOverlay
-          groups={groups}
-          groupNodeIdsMap={groupNodeIdsMap}
-          onGroupContextMenu={(groupId, x, y) => {
-            setContextMenu(null)
-            setGroupContextMenu({ groupId, x, y })
-          }}
-        />
+        <GroupOverlay groups={groups} groupNodeIdsMap={groupNodeIdsMap} />
 
         <ReactFlow
           nodes={nodes}
@@ -875,6 +900,7 @@ export default function GraphView() {
           onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
           onNodeContextMenu={onNodeContextMenu}
+          onPaneContextMenu={onPaneContextMenu}
           onConnect={onConnect}
           onPaneClick={onPaneClick}
           onNodeDragStop={onNodeDragStop}
