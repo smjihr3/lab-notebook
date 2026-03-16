@@ -5,6 +5,8 @@ export const NODE_HEIGHT = 64
 
 const NODESEP = 60
 export const RANKSEP = 100
+export const GRID_SNAP_X = NODE_WIDTH  + RANKSEP  // 280: 열 간격 단위
+export const GRID_SNAP_Y = NODE_HEIGHT + NODESEP  // 124: 행 간격 단위
 
 export function applyDagreLayout(nodes, edges, direction = 'TB', groupNodeSets = []) {
   const g = new dagre.graphlib.Graph()
@@ -47,6 +49,14 @@ export function applyDagreLayout(nodes, edges, direction = 'TB', groupNodeSets =
     // 그룹별 column 압축 후처리
     if (groupNodeSets.length > 0) {
       compactGroupColumns(layouted, edges, groupNodeSets)
+    }
+  }
+
+  // 그리드 스냅: 모든 노드 좌표를 GRID_SNAP 단위로 정렬
+  for (const node of layouted) {
+    node.position = {
+      x: Math.round(node.position.x / GRID_SNAP_X) * GRID_SNAP_X,
+      y: Math.round(node.position.y / GRID_SNAP_Y) * GRID_SNAP_Y,
     }
   }
 

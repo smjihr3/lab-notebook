@@ -8,7 +8,7 @@ import ReactFlow, {
 } from 'reactflow'
 import { useExperiments } from '../../store/experimentStore'
 import { experimentsToNodes, experimentsToEdges, getNodeStyle } from './graphUtils'
-import { applyDagreLayout, NODE_WIDTH, NODE_HEIGHT, RANKSEP } from './dagreLayout'
+import { applyDagreLayout, NODE_WIDTH, NODE_HEIGHT, RANKSEP, GRID_SNAP_X, GRID_SNAP_Y } from './dagreLayout'
 import ExperimentNode from './ExperimentNode'
 import OutcomePopup from './OutcomePopup'
 import GraphContextMenu from './GraphContextMenu'
@@ -28,8 +28,31 @@ const nodeTypes = {
 // ── 그룹 미포함 노드 밀어내기 (순수 함수, useEffect 외부) ─────────
 function applyPushOut(nodeList, groupList, fullData, isLR) {
   if (nodeList.length === 0 || groupList.length === 0) return nodeList
-  const PADDING = 24, MARGIN = 16
+  const PADDING = 24
   const fullList = Object.values(fullData)
+
+  // 그리드 스냅 헬퍼
+  const snapX = (v) => Math.round(v / GRID_SNAP_X) * GRID_SNAP_X
+  const snapY = (v) => Math.round(v / GRID_SNAP_Y) * GRID_SNAP_Y
+
+  // 충돌 회피: 목표 위치에 다른 노드가 있으면 같은 방향으로 한 칸씩 더 이동
+  const avoidX = (nx, ny, nodeId, dir) => {
+    let tx = nx
+    while (nodeList.some((n) => n.id !== nodeId &&
+        Math.abs(n.position.x - tx) < 1 && Math.abs(n.position.y - ny) < 1)) {
+      tx += dir * GRID_SNAP_X
+    }
+    return tx
+  }
+  const avoidY = (nx, ny, nodeId, dir) => {
+    let ty = ny
+    while (nodeList.some((n) => n.id !== nodeId &&
+        Math.abs(n.position.x - nx) < 1 && Math.abs(n.position.y - ty) < 1)) {
+      ty += dir * GRID_SNAP_Y
+    }
+    return ty
+  }
+
   const groupBoxes = groupList.map((group) => {
     const ids = resolveGroupNodeIds(group, fullList)
     const groupNodes = nodeList.filter((n) => ids.has(n.id))
@@ -67,40 +90,56 @@ function applyPushOut(nodeList, groupList, fullData, isLR) {
         ).filter((id) => box.ids.has(id))
 
         if (parentInGroupFollowers.length >= 2) {
-          const parentNode  = nodeList.find((n) => n.id === parentIds[0])
+          // 분기점 제외 노드
+          const parentNode   = nodeList.find((n) => n.id === parentIds[0])
           const siblingNodes = parentInGroupFollowers
-            .map((sid) => nodeList.find((n) => n.id === sid))
-            .filter(Boolean)
+            .map((sid) => nodeList.find((n) => n.id === sid)).filter(Boolean)
           if (isLR) {
-            y = box.maxY + MARGIN
-            if (siblingNodes.length > 0) x = siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length
-            else if (parentNode) x = parentNode.position.x + NODE_WIDTH + MARGIN
+            const newY = snapY(box.maxY + GRID_SNAP_Y)
+            y = avoidY(x, newY, node.id, 1)
+            if (siblingNodes.length > 0)
+              x = snapX(siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length)
+            else if (parentNode)
+              x = snapX(parentNode.position.x + GRID_SNAP_X)
           } else {
-            x = box.maxX + MARGIN
-            if (siblingNodes.length > 0) y = siblingNodes.reduce((s, n) => s + n.position.y, 0) / siblingNodes.length
-            else if (parentNode) y = parentNode.position.y + NODE_HEIGHT + MARGIN
+            const newX = snapX(box.maxX + GRID_SNAP_X)
+            x = avoidX(newX, y, node.id, 1)
+            if (siblingNodes.length > 0)
+              y = snapY(siblingNodes.reduce((s, n) => s + n.position.y, 0) / siblingNodes.length)
+            else if (parentNode)
+              y = snapY(parentNode.position.y + GRID_SNAP_Y)
           }
         } else {
+          // 단순 제외
+          const parentNode = nodeList.find((n) => n.id === parentIds[0])
           if (isLR) {
-            const parentNode = nodeList.find((n) => n.id === parentIds[0])
-            x = parentNode ? parentNode.position.x + NODE_WIDTH + RANKSEP : box.maxX + MARGIN
+            const base = parentNode ? snapX(parentNode.position.x + GRID_SNAP_X) : snapX(box.maxX + GRID_SNAP_X)
+            x = avoidX(base, y, node.id, 1)
           } else {
-            const parentNode = nodeList.find((n) => n.id === parentIds[0])
-            y = parentNode ? parentNode.position.y + NODE_HEIGHT + RANKSEP : box.maxY + MARGIN
+            const base = parentNode ? snapY(parentNode.position.y + GRID_SNAP_Y) : snapY(box.maxY + GRID_SNAP_Y)
+            y = avoidY(x, base, node.id, 1)
           }
         }
       } else if (isPreceder && !isFollower) {
         const childInGroupId = [...following].find((id) => box.ids.has(id))
         const childNode = childInGroupId ? nodeList.find((n) => n.id === childInGroupId) : null
-        if (isLR) x = childNode ? childNode.position.x - NODE_WIDTH - RANKSEP : box.minX - NODE_WIDTH - MARGIN
-        else      y = childNode ? childNode.position.y - NODE_HEIGHT - RANKSEP : box.minY - NODE_HEIGHT - MARGIN
-      } else {
-        if (overlapX <= overlapY) {
-          x = (x + NODE_WIDTH / 2) < (box.minX + box.maxX) / 2
-            ? box.minX - NODE_WIDTH - MARGIN : box.maxX + MARGIN
+        if (isLR) {
+          const base = childNode ? snapX(childNode.position.x - GRID_SNAP_X) : snapX(box.minX - GRID_SNAP_X)
+          x = avoidX(base, y, node.id, -1)
         } else {
-          y = (y + NODE_HEIGHT / 2) < (box.minY + box.maxY) / 2
-            ? box.minY - NODE_HEIGHT - MARGIN : box.maxY + MARGIN
+          const base = childNode ? snapY(childNode.position.y - GRID_SNAP_Y) : snapY(box.minY - GRID_SNAP_Y)
+          y = avoidY(x, base, node.id, -1)
+        }
+      } else {
+        // 연결 없거나 양방향 → fallback
+        if (overlapX <= overlapY) {
+          const goRight = (x + NODE_WIDTH / 2) >= (box.minX + box.maxX) / 2
+          const base = goRight ? snapX(box.maxX + GRID_SNAP_X) : snapX(box.minX - GRID_SNAP_X)
+          x = avoidX(base, y, node.id, goRight ? 1 : -1)
+        } else {
+          const goDown = (y + NODE_HEIGHT / 2) >= (box.minY + box.maxY) / 2
+          const base = goDown ? snapY(box.maxY + GRID_SNAP_Y) : snapY(box.minY - GRID_SNAP_Y)
+          y = avoidY(x, base, node.id, goDown ? 1 : -1)
         }
       }
       anyChange = true
