@@ -8,13 +8,11 @@ import { resolveGroupNodeIds } from './graphGroups'
  * @param {object[]} currentGroups
  * @param {object[]} currentNodes       ReactFlow 노드 배열
  * @param {object[]} currentExperiments 실험 배열 (followingExperiments 포함)
- * @param {string}   layoutDirection    'LR' | 'TB'
  * @returns {Map<string, {x: number, y: number}>}
  */
-export function computePushOutPositions(currentGroups, currentNodes, currentExperiments, layoutDirection) {
+export function computePushOutPositions(currentGroups, currentNodes, currentExperiments) {
   if (currentGroups.length === 0 || currentNodes.length === 0) return new Map()
 
-  const isLR   = layoutDirection === 'LR'
   const expMap = Object.fromEntries(currentExperiments.map((e) => [e.id, e]))
 
   // Step 1: 각 그룹 bounding box (padding 없음, 순수 노드 영역)
@@ -69,85 +67,43 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
         isBranch = allParentFollowers.length >= 2
       }
 
-      if (isLR) {
-        if (parentInGroup && !isBranch) {
-          // 케이스 A: 단순 후행
-          caseLabel = 'A'
-          const parentNode = currentNodes.find((n) => n.id === parentInGroup)
-          x = Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
-          y = parentNode ? parentNode.position.y : y
-        } else if (parentInGroup && isBranch) {
-          // 케이스 B: 분기 후행
-          caseLabel = 'B'
-          const siblingNodes = siblingsInGroup
-            .map((id) => currentNodes.find((n) => n.id === id)).filter(Boolean)
-          const avgX = siblingNodes.length > 0
-            ? siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length
-            : maxX + 24 + GRID_SNAP_X
-          x = Math.round(avgX / GRID_SNAP_X) * GRID_SNAP_X
-          y = Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
-        } else if (childInGroup && !parentInGroup) {
-          // 케이스 C: 선행
-          caseLabel = 'C'
-          const childNode = currentNodes.find((n) => n.id === childInGroup)
-          x = Math.floor((minX - 24) / GRID_SNAP_X) * GRID_SNAP_X - GRID_SNAP_X
-          y = childNode ? childNode.position.y : y
-        } else {
-          // 케이스 D: 둘 다 없거나 둘 다 있음
-          caseLabel = 'D'
-          const overlapX = Math.min(x + NODE_WIDTH, maxX) - Math.max(x, minX)
-          const overlapY = Math.min(y + NODE_HEIGHT, maxY) - Math.max(y, minY)
-          if (overlapX < overlapY) {
-            const goRight = (x + NODE_WIDTH / 2) >= (minX + maxX) / 2
-            x = goRight
-              ? Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
-              : Math.floor((minX - 24) / GRID_SNAP_X) * GRID_SNAP_X - GRID_SNAP_X
-          } else {
-            const goDown = (y + NODE_HEIGHT / 2) >= (minY + maxY) / 2
-            y = goDown
-              ? Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
-              : Math.floor((minY - 24) / GRID_SNAP_Y) * GRID_SNAP_Y - GRID_SNAP_Y
-          }
-        }
+      if (parentInGroup && !isBranch) {
+        // 케이스 A: 단순 후행
+        caseLabel = 'A'
+        const parentNode = currentNodes.find((n) => n.id === parentInGroup)
+        x = Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
+        y = parentNode ? parentNode.position.y : y
+      } else if (parentInGroup && isBranch) {
+        // 케이스 B: 분기 후행
+        caseLabel = 'B'
+        const siblingNodes = siblingsInGroup
+          .map((id) => currentNodes.find((n) => n.id === id)).filter(Boolean)
+        const avgX = siblingNodes.length > 0
+          ? siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length
+          : maxX + 24 + GRID_SNAP_X
+        x = Math.round(avgX / GRID_SNAP_X) * GRID_SNAP_X
+        y = Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
+      } else if (childInGroup && !parentInGroup) {
+        // 케이스 C: 선행
+        caseLabel = 'C'
+        const childNode = currentNodes.find((n) => n.id === childInGroup)
+        x = Math.floor((minX - 24) / GRID_SNAP_X) * GRID_SNAP_X - GRID_SNAP_X
+        y = childNode ? childNode.position.y : y
       } else {
-        if (parentInGroup && !isBranch) {
-          // 케이스 A: 단순 후행
-          caseLabel = 'A'
-          const parentNode = currentNodes.find((n) => n.id === parentInGroup)
-          x = parentNode ? parentNode.position.x : x
-          y = Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
-        } else if (parentInGroup && isBranch) {
-          // 케이스 B: 분기 후행
-          caseLabel = 'B'
-          const siblingNodes = siblingsInGroup
-            .map((id) => currentNodes.find((n) => n.id === id)).filter(Boolean)
-          x = Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
-          const avgY = siblingNodes.length > 0
-            ? siblingNodes.reduce((s, n) => s + n.position.y, 0) / siblingNodes.length
-            : maxY + 24 + GRID_SNAP_Y
-          y = Math.round(avgY / GRID_SNAP_Y) * GRID_SNAP_Y
-        } else if (childInGroup && !parentInGroup) {
-          // 케이스 C: 선행
-          caseLabel = 'C'
-          const childNode = currentNodes.find((n) => n.id === childInGroup)
-          x = childNode ? childNode.position.x : x
-          y = Math.floor((minY - 24) / GRID_SNAP_Y) * GRID_SNAP_Y - GRID_SNAP_Y
+        // 케이스 D: 둘 다 없거나 둘 다 있음
+        caseLabel = 'D'
+        const overlapX = Math.min(x + NODE_WIDTH, maxX) - Math.max(x, minX)
+        const overlapY = Math.min(y + NODE_HEIGHT, maxY) - Math.max(y, minY)
+        if (overlapX < overlapY) {
+          const goRight = (x + NODE_WIDTH / 2) >= (minX + maxX) / 2
+          x = goRight
+            ? Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
+            : Math.floor((minX - 24) / GRID_SNAP_X) * GRID_SNAP_X - GRID_SNAP_X
         } else {
-          // 케이스 D: LR과 동일
-          caseLabel = 'D'
-          const overlapX = Math.min(x + NODE_WIDTH, maxX) - Math.max(x, minX)
-          const overlapY = Math.min(y + NODE_HEIGHT, maxY) - Math.max(y, minY)
-          if (overlapX < overlapY) {
-            const goRight = (x + NODE_WIDTH / 2) >= (minX + maxX) / 2
-            x = goRight
-              ? Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
-              : Math.floor((minX - 24) / GRID_SNAP_X) * GRID_SNAP_X - GRID_SNAP_X
-          } else {
-            const goDown = (y + NODE_HEIGHT / 2) >= (minY + maxY) / 2
-            y = goDown
-              ? Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
-              : Math.floor((minY - 24) / GRID_SNAP_Y) * GRID_SNAP_Y - GRID_SNAP_Y
-          }
+          const goDown = (y + NODE_HEIGHT / 2) >= (minY + maxY) / 2
+          y = goDown
+            ? Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
+            : Math.floor((minY - 24) / GRID_SNAP_Y) * GRID_SNAP_Y - GRID_SNAP_Y
         }
       }
     }
@@ -183,17 +139,10 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
       const parentNewPos = updatedPositions.get(parentId)
       if (!parentNewPos) continue
       let nx, ny
-      if (isLR) {
-        if      (cl === 'A') { nx = parentNewPos.x + GRID_SNAP_X; ny = parentNewPos.y }
-        else if (cl === 'B') { nx = parentNewPos.x;               ny = parentNewPos.y + GRID_SNAP_Y }
-        else if (cl === 'C') { nx = parentNewPos.x - GRID_SNAP_X; ny = parentNewPos.y }
-        else continue
-      } else {
-        if      (cl === 'A') { nx = parentNewPos.x;               ny = parentNewPos.y + GRID_SNAP_Y }
-        else if (cl === 'B') { nx = parentNewPos.x + GRID_SNAP_X; ny = parentNewPos.y }
-        else if (cl === 'C') { nx = parentNewPos.x;               ny = parentNewPos.y - GRID_SNAP_Y }
-        else continue
-      }
+      if      (cl === 'A') { nx = parentNewPos.x + GRID_SNAP_X; ny = parentNewPos.y }
+      else if (cl === 'B') { nx = parentNewPos.x;               ny = parentNewPos.y + GRID_SNAP_Y }
+      else if (cl === 'C') { nx = parentNewPos.x - GRID_SNAP_X; ny = parentNewPos.y }
+      else continue
 
       updatedPositions.set(followId, { x: nx, y: ny })
       caseMap.set(followId, cl)

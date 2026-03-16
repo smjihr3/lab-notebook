@@ -8,7 +8,7 @@ import ReactFlow, {
 } from 'reactflow'
 import { useExperiments } from '../../store/experimentStore'
 import { experimentsToNodes, experimentsToEdges, getNodeStyle } from './graphUtils'
-import { applyDagreLayout, NODE_WIDTH, NODE_HEIGHT, RANKSEP, GRID_SNAP_X, GRID_SNAP_Y } from './dagreLayout'
+import { applyDagreLayout, NODE_WIDTH, NODE_HEIGHT, GRID_SNAP_X, GRID_SNAP_Y } from './dagreLayout'
 import ExperimentNode from './ExperimentNode'
 import OutcomePopup from './OutcomePopup'
 import GraphContextMenu from './GraphContextMenu'
@@ -27,7 +27,7 @@ const nodeTypes = {
 }
 
 // ── 그룹 미포함 노드 밀어내기 (순수 함수, useEffect 외부) ─────────
-function applyPushOut(nodeList, groupList, fullData, isLR) {
+function applyPushOut(nodeList, groupList, fullData) {
   if (nodeList.length === 0 || groupList.length === 0) return nodeList
   const PADDING = 24
   const fullList = Object.values(fullData)
@@ -95,53 +95,29 @@ function applyPushOut(nodeList, groupList, fullData, isLR) {
           const parentNode   = nodeList.find((n) => n.id === parentIds[0])
           const siblingNodes = parentInGroupFollowers
             .map((sid) => nodeList.find((n) => n.id === sid)).filter(Boolean)
-          if (isLR) {
-            const newY = snapY(box.maxY + GRID_SNAP_Y)
-            y = avoidY(x, newY, node.id, 1)
-            if (siblingNodes.length > 0)
-              x = snapX(siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length)
-            else if (parentNode)
-              x = snapX(parentNode.position.x + GRID_SNAP_X)
-          } else {
-            const newX = snapX(box.maxX + GRID_SNAP_X)
-            x = avoidX(newX, y, node.id, 1)
-            if (siblingNodes.length > 0)
-              y = snapY(siblingNodes.reduce((s, n) => s + n.position.y, 0) / siblingNodes.length)
-            else if (parentNode)
-              y = snapY(parentNode.position.y + GRID_SNAP_Y)
-          }
+          const newY = snapY(box.maxY + GRID_SNAP_Y)
+          y = avoidY(x, newY, node.id, 1)
+          if (siblingNodes.length > 0)
+            x = snapX(siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length)
+          else if (parentNode)
+            x = snapX(parentNode.position.x + GRID_SNAP_X)
         } else {
           // 단순 제외
           const parentNode = nodeList.find((n) => n.id === parentIds[0])
-          if (isLR) {
-            const base = parentNode ? snapX(parentNode.position.x + GRID_SNAP_X) : snapX(box.maxX + GRID_SNAP_X)
-            x = avoidX(base, y, node.id, 1)
-          } else {
-            const base = parentNode ? snapY(parentNode.position.y + GRID_SNAP_Y) : snapY(box.maxY + GRID_SNAP_Y)
-            y = avoidY(x, base, node.id, 1)
-          }
+          const base = parentNode ? snapX(parentNode.position.x + GRID_SNAP_X) : snapX(box.maxX + GRID_SNAP_X)
+          x = avoidX(base, y, node.id, 1)
         }
       } else if (isPreceder && !isFollower) {
         const childInGroupId = [...following].find((id) => box.ids.has(id))
         const childNode = childInGroupId ? nodeList.find((n) => n.id === childInGroupId) : null
-        if (isLR) {
-          const base = childNode ? snapX(childNode.position.x - GRID_SNAP_X) : snapX(box.minX - GRID_SNAP_X)
-          x = avoidX(base, y, node.id, -1)
-        } else {
-          const base = childNode ? snapY(childNode.position.y - GRID_SNAP_Y) : snapY(box.minY - GRID_SNAP_Y)
-          y = avoidY(x, base, node.id, -1)
-        }
+        const base = childNode ? snapX(childNode.position.x - GRID_SNAP_X) : snapX(box.minX - GRID_SNAP_X)
+        x = avoidX(base, y, node.id, -1)
       } else if (isFollower && isPreceder) {
         // 그룹 관통 노드: 선행(부모)과 후행(자식) 모두 그룹 안에 있음.
-        // follower 방향(오른쪽/아래)으로 밀어내기 — 그룹 다음 위치에 배치.
+        // follower 방향(오른쪽)으로 밀어내기 — 그룹 다음 위치에 배치.
         const parentNode = parentIds.length > 0 ? nodeList.find((n) => n.id === parentIds[0]) : null
-        if (isLR) {
-          const base = parentNode ? snapX(parentNode.position.x + GRID_SNAP_X) : snapX(box.maxX + GRID_SNAP_X)
-          x = avoidX(base, y, node.id, 1)
-        } else {
-          const base = parentNode ? snapY(parentNode.position.y + GRID_SNAP_Y) : snapY(box.maxY + GRID_SNAP_Y)
-          y = avoidY(x, base, node.id, 1)
-        }
+        const base = parentNode ? snapX(parentNode.position.x + GRID_SNAP_X) : snapX(box.maxX + GRID_SNAP_X)
+        x = avoidX(base, y, node.id, 1)
       } else {
         // 연결 없는 노드 → 좌표 기반 fallback (가장 짧은 탈출 방향)
         if (overlapX <= overlapY) {
@@ -169,7 +145,6 @@ export default function GraphView() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const [layoutDir, setLayoutDir] = useState('LR')
   const [selectedExp, setSelectedExp]   = useState(null)
   const [contextMenu, setContextMenu]   = useState(null)
   const [outcomePopup, setOutcomePopup] = useState(null)
@@ -215,7 +190,6 @@ export default function GraphView() {
   const latestSelectionRef = useRef([])
 
   const fullDataRef        = useRef({})
-  const layoutDirRef       = useRef('LR')
   const rfInstanceRef      = useRef(null)
   const groupsRef          = useRef(groups)
   const migrationDoneRef   = useRef(false)
@@ -225,8 +199,6 @@ export default function GraphView() {
   const onDeleteRef        = useRef(null)
 
   useEffect(() => { groupsRef.current = groups }, [groups])
-  useEffect(() => { layoutDirRef.current = layoutDir }, [layoutDir])
-
   // ── 그룹 노드 ID 맵 (GroupOverlay에 전달) ─────────────────────
   const groupNodeIdsMap = useMemo(() => {
     const fullList = Object.values(fullDataRef.current)
@@ -256,20 +228,17 @@ export default function GraphView() {
   }
 
   // ── 레이아웃 계산 ─────────────────────────────────────────────
-  const rebuildLayout = useCallback((fullDataMap, dir) => {
+  const rebuildLayout = useCallback((fullDataMap) => {
     const fullList = Object.values(fullDataMap)
     if (fullList.length === 0) return
-    const rawNodes = experimentsToNodes(fullList).map((n) => ({
-      ...n,
-      data: { ...n.data, layoutDirection: dir },
-    }))
+    const rawNodes = experimentsToNodes(fullList)
     const rawEdges = experimentsToEdges(fullList)
     // groupsRef.current 대신 클로저의 groups 사용: useCallback([groups])이므로
     // 항상 최신 그룹 상태를 반영. ref는 useEffect 후 갱신되므로 stale할 수 있음.
     const groupNodeSets = groups.map((g) => resolveGroupNodeIds(g, fullList))
     isLayoutingRef.current = true
-    const laidOut    = applyDagreLayout(rawNodes, rawEdges, dir, groupNodeSets)
-    const pushedOut  = applyPushOut(laidOut, groups, fullDataMap, dir === 'LR')
+    const laidOut    = applyDagreLayout(rawNodes, rawEdges, groupNodeSets)
+    const pushedOut  = applyPushOut(laidOut, groups, fullDataMap)
     const annotated  = annotateGroupMarkers(pushedOut)
 
     setNodes(annotated)
@@ -277,7 +246,7 @@ export default function GraphView() {
     isLayoutingRef.current = false
 
     // applyDagreLayout 완료 직후 밀어내기 보정
-    pushNodesOutOfGroups(groups, annotated, fullList, dir)
+    pushNodesOutOfGroups(groups, annotated, fullList)
   }, [groups])
 
   // groups 변경 시 기존 노드에 핀 정보 재주입
@@ -330,19 +299,13 @@ export default function GraphView() {
           }
         }
         experimentsLoadedRef.current = true
-        rebuildLayout(map, layoutDirRef.current)
+        rebuildLayout(map)
       })
       .catch(console.error)
   }, [isReady, experiments, getExperiment, rebuildLayout])
 
   // ── 레이아웃 조작 ─────────────────────────────────────────────
-  function handleRelayout() { rebuildLayout(fullDataRef.current, layoutDirRef.current) }
-
-  function toggleDirection() {
-    const next = layoutDir === 'TB' ? 'LR' : 'TB'
-    setLayoutDir(next)
-    rebuildLayout(fullDataRef.current, next)
-  }
+  function handleRelayout() { rebuildLayout(fullDataRef.current) }
 
   // ── setCenter / getZoom 래퍼 ──────────────────────────────────
   const rfSetCenter = useCallback((x, y, opts) => {
@@ -387,7 +350,7 @@ export default function GraphView() {
       }
 
       // 밀어내기: 그룹과 겹치는 비포함 노드 이동
-      return applyPushOut(result, groups, fullDataRef.current, layoutDirRef.current === 'LR')
+      return applyPushOut(result, groups, fullDataRef.current)
     })
   }, [groups])
 
@@ -532,7 +495,6 @@ export default function GraphView() {
       const newRfNode = experimentsToNodes([saved]).map((n) => ({
         ...n,
         position,
-        data: { ...n.data, layoutDirection: layoutDirRef.current },
       }))[0]
       setNodes((prev) => annotateGroupMarkers([...prev, newRfNode]))
 
@@ -556,9 +518,7 @@ export default function GraphView() {
   // ── ReactFlow 이벤트 ──────────────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
     if (isAddNodeMode) {
-      const pos = layoutDir === 'LR'
-        ? { x: node.position.x + NODE_WIDTH + 80, y: node.position.y }
-        : { x: node.position.x, y: node.position.y + NODE_HEIGHT + 80 }
+      const pos = { x: node.position.x + NODE_WIDTH + 80, y: node.position.y }
       handleCreateAtPosition(pos, node.id)
       return
     }
@@ -566,7 +526,7 @@ export default function GraphView() {
       setSelectedExp(node.data.experiment)
       setContextMenu(null)
     }
-  }, [isSelectMode, isAddNodeMode, layoutDir, handleCreateAtPosition])
+  }, [isSelectMode, isAddNodeMode, handleCreateAtPosition])
 
   const onNodeContextMenu = useCallback((event, node) => {
     event.preventDefault()
@@ -627,10 +587,10 @@ export default function GraphView() {
   }, [getExperiment, updateExperiment])
 
   // ── 그룹 외부 노드 밀어내기 ─────────────────────────────────
-  function pushNodesOutOfGroups(currentGroups, currentNodes, currentExperiments, layoutDirection) {
+  function pushNodesOutOfGroups(currentGroups, currentNodes, currentExperiments) {
     if (isLayoutingRef.current) return
     const updatedPositions = computePushOutPositions(
-      currentGroups, currentNodes, currentExperiments, layoutDirection
+      currentGroups, currentNodes, currentExperiments
     )
     if (updatedPositions.size > 0) {
       setNodes((prev) => prev.map((n) => {
@@ -687,7 +647,6 @@ export default function GraphView() {
         groups.map((g) => g.id === groupId ? { ...group, ...patch } : g),
         nodes,
         fullList,
-        layoutDirRef.current,
       )
       return
     }
@@ -755,7 +714,6 @@ export default function GraphView() {
       groups.map((g) => g.id === groupId ? { ...group, ...patch } : g),
       nodes,
       fullList,
-      layoutDirRef.current,
     )
   }
 
@@ -936,12 +894,6 @@ export default function GraphView() {
             + 새 실험 노트
           </button>
         )}
-        <button
-          onClick={toggleDirection}
-          className="text-xs bg-white/90 hover:bg-white border border-gray-200 px-2.5 py-1 rounded-lg shadow text-gray-600 transition-colors"
-        >
-          {layoutDir === 'LR' ? 'LR → TB' : 'TB → LR'}
-        </button>
         <button
           onClick={handleRelayout}
           className="text-xs bg-white/90 hover:bg-white border border-gray-200 px-2.5 py-1 rounded-lg shadow text-gray-600 transition-colors"

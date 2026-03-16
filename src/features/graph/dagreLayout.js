@@ -8,11 +8,11 @@ export const RANKSEP = 100
 export const GRID_SNAP_X = NODE_WIDTH  + RANKSEP  // 280: 열 간격 단위
 export const GRID_SNAP_Y = NODE_HEIGHT + NODESEP  // 124: 행 간격 단위
 
-export function applyDagreLayout(nodes, edges, direction = 'TB', groupNodeSets = []) {
+export function applyDagreLayout(nodes, edges, groupNodeSets = []) {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({
-    rankdir:   direction,
+    rankdir:   'LR',
     nodesep:   NODESEP,
     ranksep:   RANKSEP,
     ranker:    'network-simplex',
@@ -42,14 +42,11 @@ export function applyDagreLayout(nodes, edges, direction = 'TB', groupNodeSets =
     }
   })
 
-  // LR 모드: dagre 원본 순서를 유지하면서 겹침만 방지
-  if (direction === 'LR') {
-    spreadLRColumns(layouted)
+  spreadLRColumns(layouted)
 
-    // 그룹별 column 압축 후처리
-    if (groupNodeSets.length > 0) {
-      compactGroupColumns(layouted, edges, groupNodeSets)
-    }
+  // 그룹별 column 압축 후처리
+  if (groupNodeSets.length > 0) {
+    compactGroupColumns(layouted, edges, groupNodeSets)
   }
 
   // 그리드 스냅: 모든 노드 좌표를 GRID_SNAP 단위로 정렬
