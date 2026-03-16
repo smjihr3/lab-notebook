@@ -35,8 +35,8 @@ export default function ExperimentNode({ data, selected }) {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        {/* 삭제 버튼 (우하단) */}
-        {hovered && onDelete && (
+        {/* 삭제 버튼 (우하단, 항상 표시) */}
+        {onDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(experiment.id) }}
             onMouseEnter={() => setTrashHovered(true)}
@@ -45,7 +45,7 @@ export default function ExperimentNode({ data, selected }) {
             style={{
               position: 'absolute', bottom: 6, right: 8,
               background: 'none', border: 'none', cursor: 'pointer',
-              color: trashHovered ? '#ef4444' : '#94a3b8',
+              color: trashHovered ? '#ef4444' : hovered ? '#94a3b8' : '#cbd5e1',
               padding: 0, lineHeight: 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}

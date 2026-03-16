@@ -147,7 +147,7 @@ export default function GraphView() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [selectedExp, setSelectedExp]   = useState(null)
   const [contextMenu, setContextMenu]         = useState(null)
-  const [groupContextMenu, setGroupContextMenu] = useState(null) // { x, y, group }
+  const [groupContextMenu, setGroupContextMenu] = useState(null) // { groupId, x, y }
   const [outcomePopup, setOutcomePopup] = useState(null)
   const [toast, setToast]               = useState(null)  // { message, type }
 
@@ -861,9 +861,9 @@ export default function GraphView() {
         <GroupOverlay
           groups={groups}
           groupNodeIdsMap={groupNodeIdsMap}
-          onGroupContextMenu={({ x, y, group }) => {
+          onGroupContextMenu={(groupId, x, y) => {
             setContextMenu(null)
-            setGroupContextMenu({ x, y, group })
+            setGroupContextMenu({ groupId, x, y })
           }}
         />
 
@@ -898,7 +898,7 @@ export default function GraphView() {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <button
-            onClick={() => { removeGroup(groupContextMenu.group.id); setGroupContextMenu(null) }}
+            onClick={() => { removeGroup(groupContextMenu.groupId); setGroupContextMenu(null) }}
             className="w-full text-left px-3 py-1.5 text-sm text-red-500 hover:bg-red-50"
           >
             그룹 삭제

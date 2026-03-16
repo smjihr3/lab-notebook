@@ -74,7 +74,7 @@ function GroupRect({ group, nodeIds, nodeInternals, transform, onContextMenu }) 
         onContextMenu={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          onContextMenu?.({ x: e.clientX, y: e.clientY, group })
+          onContextMenu?.(group.id, e.clientX, e.clientY)
         }}
       />
       <text

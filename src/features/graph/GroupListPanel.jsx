@@ -421,7 +421,7 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
         {/* 삭제 */}
         <button
           onClick={onRemove}
-          className="text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
+          className="text-[#cbd5e1] hover:text-red-400 text-xs shrink-0"
         >
           ×
         </button>
