@@ -22,13 +22,11 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
       (n) => n.type !== 'groupBackground' && groupNodeIds.has(n.id)
     )
     if (groupNodes.length === 0) return []
-    return [{
-      groupNodeIds,
-      minX: Math.min(...groupNodes.map((n) => n.position.x)),
-      minY: Math.min(...groupNodes.map((n) => n.position.y)),
-      maxX: Math.max(...groupNodes.map((n) => n.position.x + NODE_WIDTH)),
-      maxY: Math.max(...groupNodes.map((n) => n.position.y + NODE_HEIGHT)),
-    }]
+    const minX = Math.min(...groupNodes.map((n) => n.position.x))
+    const minY = Math.min(...groupNodes.map((n) => n.position.y))
+    const maxX = Math.max(...groupNodes.map((n) => n.position.x + NODE_WIDTH))
+    const maxY = Math.max(...groupNodes.map((n) => n.position.y + NODE_HEIGHT))
+    return [{ groupNodeIds, minX, minY, maxX, maxY }]
   })
   if (groupBoundsArr.length === 0) return new Map()
 
@@ -83,7 +81,7 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
           : maxX + 24 + GRID_SNAP_X
         x = Math.round(avgX / GRID_SNAP_X) * GRID_SNAP_X
         y = Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
-      } else if (childInGroup && !parentInGroup) {
+} else if (childInGroup && !parentInGroup) {
         // 케이스 C: 선행
         caseLabel = 'C'
         const childNode = currentNodes.find((n) => n.id === childInGroup)

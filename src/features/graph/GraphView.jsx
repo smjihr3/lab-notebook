@@ -96,6 +96,7 @@ function computeReshiftPositions(excludedNodeId, updatedGroupNodeIds, currentNod
     currentY += subtreeHeight
   }
 
+  console.log('[reshift] 이동대상', [...updatedPositions.entries()])
   return updatedPositions
 }
 
@@ -761,8 +762,10 @@ export default function GraphView() {
       {
         const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
         const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
-        const pushOutMap  = computePushOutPositions(updatedGroups, nodes, fullList)
+        // reshift 먼저 계산 → 적용된 좌표로 pushOut 계산 (그룹 bb가 축소된 상태 반영)
         const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
+        const nodesAfterReshift = nodes.map((n) => { const p = reshiftMap.get(n.id); return p ? { ...n, position: p } : n })
+        const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
         const merged      = new Map([...pushOutMap, ...reshiftMap])
         if (merged.size > 0) {
           setNodes((prev) => prev.map((n) => {
@@ -836,8 +839,10 @@ export default function GraphView() {
     {
       const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
       const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
-      const pushOutMap  = computePushOutPositions(updatedGroups, nodes, fullList)
+      // reshift 먼저 계산 → 적용된 좌표로 pushOut 계산 (그룹 bb가 축소된 상태 반영)
       const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
+      const nodesAfterReshift = nodes.map((n) => { const p = reshiftMap.get(n.id); return p ? { ...n, position: p } : n })
+      const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
       const merged      = new Map([...pushOutMap, ...reshiftMap])
       if (merged.size > 0) {
         setNodes((prev) => prev.map((n) => {
