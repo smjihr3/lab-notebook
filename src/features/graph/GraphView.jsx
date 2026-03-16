@@ -160,14 +160,25 @@ export default function GraphView() {
           ).filter((id) => box.ids.has(id))
 
           if (parentInGroupFollowers.length >= 2) {
-            // 분기점 제외 노드 → LR: 그룹 아래 + P의 x열, TB: 그룹 오른쪽 + P의 y행
+            // 분기점 제외 노드 → LR: 그룹 아래 + 형제 x평균, TB: 그룹 오른쪽 + 형제 y평균
             const parentNode = nodes.find((n) => n.id === parentIds[0])
+            const siblingNodes = parentInGroupFollowers
+              .map((sid) => nodes.find((n) => n.id === sid))
+              .filter(Boolean)
             if (isLR) {
               y = box.maxY + MARGIN
-              if (parentNode) x = parentNode.position.x + NODE_WIDTH + MARGIN
+              if (siblingNodes.length > 0) {
+                x = siblingNodes.reduce((sum, n) => sum + n.position.x, 0) / siblingNodes.length
+              } else if (parentNode) {
+                x = parentNode.position.x + NODE_WIDTH + MARGIN
+              }
             } else {
               x = box.maxX + MARGIN
-              if (parentNode) y = parentNode.position.y + NODE_HEIGHT + MARGIN
+              if (siblingNodes.length > 0) {
+                y = siblingNodes.reduce((sum, n) => sum + n.position.y, 0) / siblingNodes.length
+              } else if (parentNode) {
+                y = parentNode.position.y + NODE_HEIGHT + MARGIN
+              }
             }
           } else {
             // 단순 제외 → LR: 오른쪽, TB: 아래쪽
