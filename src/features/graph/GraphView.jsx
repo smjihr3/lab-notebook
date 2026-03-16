@@ -25,6 +25,92 @@ const nodeTypes = {
   experimentNode: ExperimentNode,
 }
 
+// ── 그룹 미포함 노드 밀어내기 (순수 함수, useEffect 외부) ─────────
+function applyPushOut(nodeList, groupList, fullData, isLR) {
+  if (nodeList.length === 0 || groupList.length === 0) return nodeList
+  const PADDING = 24, MARGIN = 16
+  const fullList = Object.values(fullData)
+  const groupBoxes = groupList.map((group) => {
+    const ids = resolveGroupNodeIds(group, fullList)
+    const groupNodes = nodeList.filter((n) => ids.has(n.id))
+    if (groupNodes.length === 0) return null
+    return {
+      ids,
+      minX: Math.min(...groupNodes.map((n) => n.position.x)) - PADDING,
+      minY: Math.min(...groupNodes.map((n) => n.position.y)) - PADDING,
+      maxX: Math.max(...groupNodes.map((n) => n.position.x + NODE_WIDTH)) + PADDING,
+      maxY: Math.max(...groupNodes.map((n) => n.position.y + NODE_HEIGHT)) + PADDING,
+    }
+  }).filter(Boolean)
+  if (groupBoxes.length === 0) return nodeList
+
+  let anyChange = false
+  const updated = nodeList.map((node) => {
+    let { x, y } = node.position
+    const exp = fullData[node.id]
+    const preceding = new Set(exp?.connections?.precedingExperiments ?? [])
+    const following = new Set(exp?.connections?.followingExperiments ?? [])
+
+    for (const box of groupBoxes) {
+      if (box.ids.has(node.id)) continue
+      const overlapX = Math.min(x + NODE_WIDTH, box.maxX) - Math.max(x, box.minX)
+      const overlapY = Math.min(y + NODE_HEIGHT, box.maxY) - Math.max(y, box.minY)
+      if (overlapX <= 0 || overlapY <= 0) continue
+
+      const parentIds  = [...preceding].filter((id) => box.ids.has(id))
+      const isFollower = parentIds.length > 0
+      const isPreceder = [...following].some((id) => box.ids.has(id))
+
+      if (isFollower && !isPreceder) {
+        const parentInGroupFollowers = parentIds.flatMap(
+          (pid) => fullData[pid]?.connections?.followingExperiments ?? []
+        ).filter((id) => box.ids.has(id))
+
+        if (parentInGroupFollowers.length >= 2) {
+          const parentNode  = nodeList.find((n) => n.id === parentIds[0])
+          const siblingNodes = parentInGroupFollowers
+            .map((sid) => nodeList.find((n) => n.id === sid))
+            .filter(Boolean)
+          if (isLR) {
+            y = box.maxY + MARGIN
+            if (siblingNodes.length > 0) x = siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length
+            else if (parentNode) x = parentNode.position.x + NODE_WIDTH + MARGIN
+          } else {
+            x = box.maxX + MARGIN
+            if (siblingNodes.length > 0) y = siblingNodes.reduce((s, n) => s + n.position.y, 0) / siblingNodes.length
+            else if (parentNode) y = parentNode.position.y + NODE_HEIGHT + MARGIN
+          }
+        } else {
+          if (isLR) {
+            const parentNode = nodeList.find((n) => n.id === parentIds[0])
+            x = parentNode ? parentNode.position.x + NODE_WIDTH + RANKSEP : box.maxX + MARGIN
+          } else {
+            const parentNode = nodeList.find((n) => n.id === parentIds[0])
+            y = parentNode ? parentNode.position.y + NODE_HEIGHT + RANKSEP : box.maxY + MARGIN
+          }
+        }
+      } else if (isPreceder && !isFollower) {
+        const childInGroupId = [...following].find((id) => box.ids.has(id))
+        const childNode = childInGroupId ? nodeList.find((n) => n.id === childInGroupId) : null
+        if (isLR) x = childNode ? childNode.position.x - NODE_WIDTH - RANKSEP : box.minX - NODE_WIDTH - MARGIN
+        else      y = childNode ? childNode.position.y - NODE_HEIGHT - RANKSEP : box.minY - NODE_HEIGHT - MARGIN
+      } else {
+        if (overlapX <= overlapY) {
+          x = (x + NODE_WIDTH / 2) < (box.minX + box.maxX) / 2
+            ? box.minX - NODE_WIDTH - MARGIN : box.maxX + MARGIN
+        } else {
+          y = (y + NODE_HEIGHT / 2) < (box.minY + box.maxY) / 2
+            ? box.minY - NODE_HEIGHT - MARGIN : box.maxY + MARGIN
+        }
+      }
+      anyChange = true
+    }
+    if (x === node.position.x && y === node.position.y) return node
+    return { ...node, position: { x, y } }
+  })
+  return anyChange ? updated : nodeList
+}
+
 export default function GraphView() {
   const navigate = useNavigate()
   const { experiments, isReady, getExperiment, updateExperiment, createExperiment, deleteExperiment } = useExperiments()
@@ -129,9 +215,10 @@ export default function GraphView() {
     const rawEdges = experimentsToEdges(fullList)
     const groupNodeSets = groupsRef.current.map((g) => resolveGroupNodeIds(g, fullList))
     isLayoutingRef.current = true
-    const laidOut  = applyDagreLayout(rawNodes, rawEdges, dir, groupNodeSets)
+    const laidOut    = applyDagreLayout(rawNodes, rawEdges, dir, groupNodeSets)
+    const pushedOut  = applyPushOut(laidOut, groupsRef.current, fullDataMap, dir === 'LR')
 
-    setNodes(annotateGroupMarkers(laidOut))
+    setNodes(annotateGroupMarkers(pushedOut))
     setEdges(rawEdges)
     isLayoutingRef.current = false
   }, [groups])
@@ -140,108 +227,6 @@ export default function GraphView() {
   useEffect(() => {
     setNodes((prev) => annotateGroupMarkers(prev))
   }, [groups])
-
-  // ── 그룹 미포함 노드 자동 밀어내기 ───────────────────────────
-  useEffect(() => {
-    if (isLayoutingRef.current) return
-    if (nodes.length === 0 || groups.length === 0) return
-    const PADDING = 24, MARGIN = 16
-    const isLR = layoutDir === 'LR'
-    const fullList = Object.values(fullDataRef.current)
-    const groupBoxes = groups.map((group) => {
-      const ids = resolveGroupNodeIds(group, fullList)
-      const groupNodes = nodes.filter((n) => ids.has(n.id))
-      if (groupNodes.length === 0) return null
-      return {
-        ids,
-        minX: Math.min(...groupNodes.map((n) => n.position.x)) - PADDING,
-        minY: Math.min(...groupNodes.map((n) => n.position.y)) - PADDING,
-        maxX: Math.max(...groupNodes.map((n) => n.position.x + NODE_WIDTH)) + PADDING,
-        maxY: Math.max(...groupNodes.map((n) => n.position.y + NODE_HEIGHT)) + PADDING,
-      }
-    }).filter(Boolean)
-    if (groupBoxes.length === 0) return
-
-    let anyChange = false
-    const updated = nodes.map((node) => {
-      let { x, y } = node.position
-      const exp = fullDataRef.current[node.id]
-      const preceding  = new Set(exp?.connections?.precedingExperiments  ?? [])
-      const following  = new Set(exp?.connections?.followingExperiments  ?? [])
-
-      for (const box of groupBoxes) {
-        if (box.ids.has(node.id)) continue
-        const overlapX = Math.min(x + NODE_WIDTH, box.maxX) - Math.max(x, box.minX)
-        const overlapY = Math.min(y + NODE_HEIGHT, box.maxY) - Math.max(y, box.minY)
-        if (overlapX <= 0 || overlapY <= 0) continue
-
-        const parentIds  = [...preceding].filter((id) => box.ids.has(id))
-        const isFollower = parentIds.length > 0
-        const isPreceder = [...following].some((id) => box.ids.has(id))
-
-        if (isFollower && !isPreceder) {
-          // N은 그룹의 후행 실험
-          // P의 그룹 내 후행 실험 수로 분기 여부 판단
-          const parentInGroupFollowers = parentIds.flatMap(
-            (pid) => fullDataRef.current[pid]?.connections?.followingExperiments ?? []
-          ).filter((id) => box.ids.has(id))
-
-          if (parentInGroupFollowers.length >= 2) {
-            // 분기점 제외 노드 → LR: 그룹 아래 + 형제 x평균, TB: 그룹 오른쪽 + 형제 y평균
-            const parentNode = nodes.find((n) => n.id === parentIds[0])
-            const siblingNodes = parentInGroupFollowers
-              .map((sid) => nodes.find((n) => n.id === sid))
-              .filter(Boolean)
-            if (isLR) {
-              y = box.maxY + MARGIN
-              if (siblingNodes.length > 0) {
-                x = siblingNodes.reduce((sum, n) => sum + n.position.x, 0) / siblingNodes.length
-              } else if (parentNode) {
-                x = parentNode.position.x + NODE_WIDTH + MARGIN
-              }
-            } else {
-              x = box.maxX + MARGIN
-              if (siblingNodes.length > 0) {
-                y = siblingNodes.reduce((sum, n) => sum + n.position.y, 0) / siblingNodes.length
-              } else if (parentNode) {
-                y = parentNode.position.y + NODE_HEIGHT + MARGIN
-              }
-            }
-          } else {
-            // 단순 제외 → LR: 오른쪽, TB: 아래쪽
-            if (isLR) {
-              const parentNode = nodes.find((n) => n.id === parentIds[0])
-              x = parentNode ? parentNode.position.x + NODE_WIDTH + RANKSEP : box.maxX + MARGIN
-            } else {
-              const parentNode = nodes.find((n) => n.id === parentIds[0])
-              y = parentNode ? parentNode.position.y + NODE_HEIGHT + RANKSEP : box.maxY + MARGIN
-            }
-          }
-        } else if (isPreceder && !isFollower) {
-          // N은 그룹의 선행 실험 → LR: 왼쪽, TB: 위쪽
-          const childInGroupId = [...following].find((id) => box.ids.has(id))
-          const childNode = childInGroupId ? nodes.find((n) => n.id === childInGroupId) : null
-          if (isLR) x = childNode ? childNode.position.x - NODE_WIDTH - RANKSEP : box.minX - NODE_WIDTH - MARGIN
-          else      y = childNode ? childNode.position.y - NODE_HEIGHT - RANKSEP : box.minY - NODE_HEIGHT - MARGIN
-        } else {
-          // 연결 없거나 양방향 → 최소 이동 거리 fallback
-          if (overlapX <= overlapY) {
-            x = (x + NODE_WIDTH / 2) < (box.minX + box.maxX) / 2
-              ? box.minX - NODE_WIDTH - MARGIN
-              : box.maxX + MARGIN
-          } else {
-            y = (y + NODE_HEIGHT / 2) < (box.minY + box.maxY) / 2
-              ? box.minY - NODE_HEIGHT - MARGIN
-              : box.maxY + MARGIN
-          }
-        }
-        anyChange = true
-      }
-      if (x === node.position.x && y === node.position.y) return node
-      return { ...node, position: { x, y } }
-    })
-    if (anyChange) setNodes(updated)
-  }, [nodes, groups])
 
   // ── 전체 실험 데이터 로드 ─────────────────────────────────────
   useEffect(() => {
@@ -305,35 +290,41 @@ export default function GraphView() {
     return rfInstanceRef.current?.getZoom() ?? 1
   }, [])
 
-  // ── 그룹 드래그 이동 ──────────────────────────────────────────
+  // ── 그룹 드래그 이동 + 밀어내기 ─────────────────────────────
   const onNodeDragStop = useCallback((event, draggedNode) => {
     if (event.shiftKey) return
 
-    const fullList = Object.values(fullDataRef.current)
+    const fullList    = Object.values(fullDataRef.current)
     const affectedGroups = groups.filter((g) => {
       const ids = resolveGroupNodeIds(g, fullList)
       return ids.has(draggedNode.id)
     })
-    if (affectedGroups.length === 0) return
 
     setNodes((prev) => {
-      const prevNode = prev.find((n) => n.id === draggedNode.id)
-      if (!prevNode) return prev
+      let result = prev
 
-      const dx = draggedNode.position.x - prevNode.position.x
-      const dy = draggedNode.position.y - prevNode.position.y
-      if (dx === 0 && dy === 0) return prev
+      // 그룹 드래그: 같은 그룹 내 다른 노드 함께 이동
+      if (affectedGroups.length > 0) {
+        const prevNode = prev.find((n) => n.id === draggedNode.id)
+        if (prevNode) {
+          const dx = draggedNode.position.x - prevNode.position.x
+          const dy = draggedNode.position.y - prevNode.position.y
+          if (dx !== 0 || dy !== 0) {
+            const moveIds = new Set()
+            affectedGroups.forEach((g) => {
+              resolveGroupNodeIds(g, fullList).forEach((id) => moveIds.add(id))
+            })
+            moveIds.delete(draggedNode.id)
+            result = prev.map((n) => {
+              if (!moveIds.has(n.id)) return n
+              return { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
+            })
+          }
+        }
+      }
 
-      const moveIds = new Set()
-      affectedGroups.forEach((g) => {
-        resolveGroupNodeIds(g, fullList).forEach((id) => moveIds.add(id))
-      })
-      moveIds.delete(draggedNode.id)
-
-      return prev.map((n) => {
-        if (!moveIds.has(n.id)) return n
-        return { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
-      })
+      // 밀어내기: 그룹과 겹치는 비포함 노드 이동
+      return applyPushOut(result, groups, fullDataRef.current, layoutDirRef.current === 'LR')
     })
   }, [groups])
 
