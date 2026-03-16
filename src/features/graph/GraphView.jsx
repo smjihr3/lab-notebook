@@ -621,6 +621,116 @@ export default function GraphView() {
     }
   }, [getExperiment, updateExperiment])
 
+  // ── 그룹 외부 노드 밀어내기 (제외 직후 호출용) ──────────────
+  function pushNodesOutOfGroups(currentGroups, currentExperiments) {
+    if (isLayoutingRef.current) return
+    if (currentGroups.length === 0) return
+
+    const isLR   = layoutDirRef.current === 'LR'
+    const PADDING = 24
+    const expMap  = Object.fromEntries(currentExperiments.map((e) => [e.id, e]))
+
+    setNodes((currentNodes) => {
+      if (currentNodes.length === 0) return currentNodes
+
+      const groupBoundsArr = currentGroups.flatMap((group) => {
+        const groupNodeIds = resolveGroupNodeIds(group, currentExperiments)
+        const groupNodes   = currentNodes.filter(
+          (n) => groupNodeIds.has(n.id) && n.type !== 'groupBackground'
+        )
+        if (groupNodes.length === 0) return []
+        return [{
+          groupNodeIds,
+          minX: Math.min(...groupNodes.map((n) => n.position.x)) - PADDING,
+          minY: Math.min(...groupNodes.map((n) => n.position.y)) - PADDING,
+          maxX: Math.max(...groupNodes.map((n) => n.position.x + NODE_WIDTH)) + PADDING,
+          maxY: Math.max(...groupNodes.map((n) => n.position.y + NODE_HEIGHT)) + PADDING,
+        }]
+      })
+      if (groupBoundsArr.length === 0) return currentNodes
+
+      let hasChange = false
+      const updatedNodes = currentNodes.map((node) => {
+        if (node.type === 'groupBackground') return node
+
+        let { x, y } = node.position
+
+        for (const { groupNodeIds, minX, minY, maxX, maxY } of groupBoundsArr) {
+          if (groupNodeIds.has(node.id)) continue
+
+          const overlaps = x < maxX && x + NODE_WIDTH > minX &&
+                           y < maxY && y + NODE_HEIGHT > minY
+          if (!overlaps) continue
+
+          const preceding = expMap[node.id]?.connections?.precedingExperiments ?? []
+          const following = expMap[node.id]?.connections?.followingExperiments ?? []
+
+          const parentInGroup = preceding.find((id) => groupNodeIds.has(id))
+          const childInGroup  = following.find((id) => groupNodeIds.has(id))
+
+          if (parentInGroup) {
+            const parentNode = currentNodes.find((n) => n.id === parentInGroup)
+            const parentFollowersInGroup = (expMap[parentInGroup]?.connections?.followingExperiments ?? [])
+              .filter((id) => groupNodeIds.has(id))
+
+            if (parentFollowersInGroup.length >= 2) {
+              // 분기 케이스: 형제 x 평균, 그룹 아래로
+              const siblingNodes = parentFollowersInGroup
+                .map((id) => currentNodes.find((n) => n.id === id)).filter(Boolean)
+              if (isLR) {
+                x = siblingNodes.length > 0
+                  ? siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length
+                  : (parentNode ? parentNode.position.x + NODE_WIDTH + GRID_SNAP_X : maxX + GRID_SNAP_X)
+                y = maxY + GRID_SNAP_Y
+              } else {
+                y = siblingNodes.length > 0
+                  ? siblingNodes.reduce((s, n) => s + n.position.y, 0) / siblingNodes.length
+                  : (parentNode ? parentNode.position.y + NODE_HEIGHT + GRID_SNAP_Y : maxY + GRID_SNAP_Y)
+                x = maxX + GRID_SNAP_X
+              }
+            } else {
+              // 단순 후행 노드
+              if (isLR) {
+                x = parentNode ? parentNode.position.x + NODE_WIDTH + GRID_SNAP_X : maxX + GRID_SNAP_X
+                y = parentNode ? parentNode.position.y : y
+              } else {
+                y = parentNode ? parentNode.position.y + NODE_HEIGHT + GRID_SNAP_Y : maxY + GRID_SNAP_Y
+                x = parentNode ? parentNode.position.x : x
+              }
+            }
+          } else if (childInGroup) {
+            const childNode = currentNodes.find((n) => n.id === childInGroup)
+            if (isLR) {
+              x = childNode ? childNode.position.x - NODE_WIDTH - GRID_SNAP_X : minX - NODE_WIDTH - GRID_SNAP_X
+              y = childNode ? childNode.position.y : y
+            } else {
+              y = childNode ? childNode.position.y - NODE_HEIGHT - GRID_SNAP_Y : minY - NODE_HEIGHT - GRID_SNAP_Y
+              x = childNode ? childNode.position.x : x
+            }
+          } else {
+            // 둘 다 해당하거나 둘 다 없음: 겹침 최소 축으로 이동
+            const overlapX = Math.min(x + NODE_WIDTH, maxX) - Math.max(x, minX)
+            const overlapY = Math.min(y + NODE_HEIGHT, maxY) - Math.max(y, minY)
+            if (overlapX <= overlapY) {
+              const goRight = (x + NODE_WIDTH / 2) >= (minX + maxX) / 2
+              x = goRight ? maxX : minX - NODE_WIDTH
+            } else {
+              const goDown = (y + NODE_HEIGHT / 2) >= (minY + maxY) / 2
+              y = goDown ? maxY : minY - NODE_HEIGHT
+            }
+          }
+
+          hasChange = true
+        }
+
+        if (x === node.position.x && y === node.position.y) return node
+        return { ...node, position: { x, y } }
+      })
+
+      return hasChange ? updatedNodes : currentNodes
+    })
+  }
+
   // ── 그룹에서 노드 제외 ────────────────────────────────────────
   function handleExcludeFromGroup(experimentId, groupId) {
     const group = groups.find((g) => g.id === groupId)
@@ -632,48 +742,108 @@ export default function GraphView() {
     const expX           = fullDataRef.current[experimentId]
     const followers      = expX?.connections?.followingExperiments ?? []
 
+    // ── Case 1: X는 시작 노드 ──────────────────────────────────
     if (startNodeIds.includes(experimentId)) {
-      // Case 1: X는 시작 노드 — 그룹 내 후속을 새 시작점으로 승격
+      let newBlockedEdges    = [...(group.blockedEdges    ?? [])]
+      let newTerminalNodeIds = [...(group.terminalNodeIds ?? [])]
+
+      // X의 followingExperiments → blockedEdges 추가
+      for (const followId of followers) {
+        if (!newBlockedEdges.some((e) => e.from === experimentId && e.to === followId)) {
+          newBlockedEdges.push({ from: experimentId, to: followId })
+        }
+      }
+      // followingExperiments 없으면 terminalNodeIds에 X 추가
+      if (followers.length === 0 && !newTerminalNodeIds.includes(experimentId)) {
+        newTerminalNodeIds.push(experimentId)
+      }
+
+      // 후속 노드 승격: startNodeIds에서 X 제거, X의 in-group followers 추가
       const inGroupFollowers = followers.filter((id) => currentNodeIds.has(id))
       const newStartNodeIds = [
         ...startNodeIds.filter((id) => id !== experimentId),
         ...inGroupFollowers.filter((id) => !startNodeIds.includes(id)),
       ]
-      updateGroup(groupId, {
-        startNodeIds:    newStartNodeIds,
-        openEdges:       (group.openEdges       ?? []).filter((e) => e.to !== experimentId),
-        blockedEdges:    (group.blockedEdges    ?? []).filter((e) => e.from !== experimentId),
-        terminalNodeIds: (group.terminalNodeIds ?? []).filter((id) => id !== experimentId),
-        endNodeIds:      (group.endNodeIds      ?? []).filter((id) => id !== experimentId),
-      })
+
+      // openEdges에서 to===X 제거
+      const newOpenEdges = (group.openEdges ?? []).filter((e) => e.to !== experimentId)
+
+      // endNodeIds에서 X 제거, blockedEdges에서 from===X 제거
+      newBlockedEdges = newBlockedEdges.filter((e) => e.from !== experimentId)
+      const newEndNodeIds = (group.endNodeIds ?? []).filter((id) => id !== experimentId)
+
+      const patch = { startNodeIds: newStartNodeIds, openEdges: newOpenEdges, blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
+      updateGroup(groupId, patch)
+      pushNodesOutOfGroups(
+        groups.map((g) => g.id === groupId ? { ...group, ...patch } : g),
+        fullList,
+      )
       return
     }
 
-    // Case 2: X는 시작 노드 아님 — 부모에서 X로의 blockedEdge 추가
+    // ── Case 2: X는 시작 노드 아님 ─────────────────────────────
     const groupParents = (expX?.connections?.precedingExperiments ?? [])
       .filter((id) => currentNodeIds.has(id))
     if (groupParents.length === 0) return
 
-    let newBlockedEdges = [...(group.blockedEdges ?? [])]
-    for (const parentId of groupParents) {
-      if (!newBlockedEdges.some((e) => e.from === parentId && e.to === experimentId)) {
-        newBlockedEdges.push({ from: parentId, to: experimentId })
+    const expMap = Object.fromEntries(fullList.map((e) => [e.id, e]))
+
+    // X에서 BFS: X 이후 도달 가능 노드 세트 (X 포함)
+    const xReachable = new Set()
+    const xQueue = [experimentId]
+    while (xQueue.length > 0) {
+      const cur = xQueue.shift()
+      if (xReachable.has(cur)) continue
+      xReachable.add(cur)
+      for (const nid of expMap[cur]?.connections?.followingExperiments ?? []) {
+        if (!xReachable.has(nid)) xQueue.push(nid)
       }
     }
 
-    // 새 blockedEdges로 재계산한 그룹 노드 ID
-    const newGroupNodeIds = resolveGroupNodeIds({ ...group, blockedEdges: newBlockedEdges }, fullList)
+    // P = 첫 번째 그룹 내 부모
+    const parentId = groupParents[0]
+    const expP = expMap[parentId]
+    const pInGroupFollowers = (expP?.connections?.followingExperiments ?? [])
+      .filter((id) => currentNodeIds.has(id))
 
-    // 더 이상 도달 불가능한 노드의 blockedEdges/terminalNodeIds 제거
-    newBlockedEdges = newBlockedEdges.filter((e) => newGroupNodeIds.has(e.from))
-    const newTerminalNodeIds = (group.terminalNodeIds ?? []).filter((id) => newGroupNodeIds.has(id))
-    const newEndNodeIds      = (group.endNodeIds      ?? []).filter((id) => id !== experimentId)
+    let newBlockedEdges    = [...(group.blockedEdges    ?? [])]
+    let newTerminalNodeIds = [...(group.terminalNodeIds ?? [])]
+    let newEndNodeIds      = (group.endNodeIds ?? []).filter((id) => id !== experimentId)
 
-    updateGroup(groupId, {
-      blockedEdges:    newBlockedEdges,
-      terminalNodeIds: newTerminalNodeIds,
-      endNodeIds:      newEndNodeIds,
-    })
+    if (pInGroupFollowers.length >= 2) {
+      // 분기 후 첫 노드: P → X 차단, 새 끝점 없음
+      for (const pid of groupParents) {
+        if (!newBlockedEdges.some((e) => e.from === pid && e.to === experimentId)) {
+          newBlockedEdges.push({ from: pid, to: experimentId })
+        }
+      }
+      // X 이후 도달 가능 노드의 blockedEdges.from / terminalNodeIds 제거
+      newBlockedEdges    = newBlockedEdges.filter((e) => !xReachable.has(e.from))
+      newTerminalNodeIds = newTerminalNodeIds.filter((id) => !xReachable.has(id))
+    } else {
+      // 단일 경로 중간 노드: P를 새 끝점으로 자동 지정
+      const pFollowers = expP?.connections?.followingExperiments ?? []
+      for (const followId of pFollowers) {
+        if (!newBlockedEdges.some((e) => e.from === parentId && e.to === followId)) {
+          newBlockedEdges.push({ from: parentId, to: followId })
+        }
+      }
+      if (pFollowers.length === 0 && !newTerminalNodeIds.includes(parentId)) {
+        newTerminalNodeIds.push(parentId)
+      }
+      if (!newEndNodeIds.includes(parentId)) newEndNodeIds = [...newEndNodeIds, parentId]
+
+      // X 이후 도달 가능 노드의 blockedEdges.from / terminalNodeIds 제거
+      newBlockedEdges    = newBlockedEdges.filter((e) => !xReachable.has(e.from))
+      newTerminalNodeIds = newTerminalNodeIds.filter((id) => !xReachable.has(id))
+    }
+
+    const patch = { blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
+    updateGroup(groupId, patch)
+    pushNodesOutOfGroups(
+      groups.map((g) => g.id === groupId ? { ...group, ...patch } : g),
+      fullList,
+    )
   }
 
   // ── 실험 노트 삭제 ─────────────────────────────────────────────
