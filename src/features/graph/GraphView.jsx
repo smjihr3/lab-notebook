@@ -674,38 +674,40 @@ export default function GraphView() {
               .filter((id) => groupNodeIds.has(id))
 
             if (parentFollowersInGroup.length >= 2) {
-              // 분기 케이스: 형제 x 평균, 그룹 아래로
+              // 분기 케이스
               const siblingNodes = parentFollowersInGroup
                 .map((id) => currentNodes.find((n) => n.id === id)).filter(Boolean)
               if (isLR) {
-                x = siblingNodes.length > 0
+                const avgX = siblingNodes.length > 0
                   ? siblingNodes.reduce((s, n) => s + n.position.x, 0) / siblingNodes.length
-                  : (parentNode ? parentNode.position.x + NODE_WIDTH + GRID_SNAP_X : maxX + GRID_SNAP_X)
-                y = maxY + GRID_SNAP_Y
+                  : maxX + GRID_SNAP_X
+                x = Math.round(avgX / GRID_SNAP_X) * GRID_SNAP_X
+                y = Math.ceil(maxY / GRID_SNAP_Y) * GRID_SNAP_Y
               } else {
-                y = siblingNodes.length > 0
+                x = Math.ceil(maxX / GRID_SNAP_X) * GRID_SNAP_X
+                const avgY = siblingNodes.length > 0
                   ? siblingNodes.reduce((s, n) => s + n.position.y, 0) / siblingNodes.length
-                  : (parentNode ? parentNode.position.y + NODE_HEIGHT + GRID_SNAP_Y : maxY + GRID_SNAP_Y)
-                x = maxX + GRID_SNAP_X
+                  : maxY + GRID_SNAP_Y
+                y = Math.round(avgY / GRID_SNAP_Y) * GRID_SNAP_Y
               }
             } else {
               // 단순 후행 노드
               if (isLR) {
-                x = parentNode ? parentNode.position.x + NODE_WIDTH + GRID_SNAP_X : maxX + GRID_SNAP_X
+                x = Math.ceil(maxX / GRID_SNAP_X) * GRID_SNAP_X
                 y = parentNode ? parentNode.position.y : y
               } else {
-                y = parentNode ? parentNode.position.y + NODE_HEIGHT + GRID_SNAP_Y : maxY + GRID_SNAP_Y
                 x = parentNode ? parentNode.position.x : x
+                y = Math.ceil(maxY / GRID_SNAP_Y) * GRID_SNAP_Y
               }
             }
           } else if (childInGroup) {
             const childNode = currentNodes.find((n) => n.id === childInGroup)
             if (isLR) {
-              x = childNode ? childNode.position.x - NODE_WIDTH - GRID_SNAP_X : minX - NODE_WIDTH - GRID_SNAP_X
+              x = Math.floor(minX / GRID_SNAP_X) * GRID_SNAP_X - GRID_SNAP_X
               y = childNode ? childNode.position.y : y
             } else {
-              y = childNode ? childNode.position.y - NODE_HEIGHT - GRID_SNAP_Y : minY - NODE_HEIGHT - GRID_SNAP_Y
               x = childNode ? childNode.position.x : x
+              y = Math.floor(minY / GRID_SNAP_Y) * GRID_SNAP_Y - GRID_SNAP_Y
             }
           } else {
             // 둘 다 해당하거나 둘 다 없음: 겹침 최소 축으로 이동
