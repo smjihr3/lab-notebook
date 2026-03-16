@@ -130,8 +130,19 @@ function applyPushOut(nodeList, groupList, fullData, isLR) {
           const base = childNode ? snapY(childNode.position.y - GRID_SNAP_Y) : snapY(box.minY - GRID_SNAP_Y)
           y = avoidY(x, base, node.id, -1)
         }
+      } else if (isFollower && isPreceder) {
+        // 그룹 관통 노드: 선행(부모)과 후행(자식) 모두 그룹 안에 있음.
+        // follower 방향(오른쪽/아래)으로 밀어내기 — 그룹 다음 위치에 배치.
+        const parentNode = parentIds.length > 0 ? nodeList.find((n) => n.id === parentIds[0]) : null
+        if (isLR) {
+          const base = parentNode ? snapX(parentNode.position.x + GRID_SNAP_X) : snapX(box.maxX + GRID_SNAP_X)
+          x = avoidX(base, y, node.id, 1)
+        } else {
+          const base = parentNode ? snapY(parentNode.position.y + GRID_SNAP_Y) : snapY(box.maxY + GRID_SNAP_Y)
+          y = avoidY(x, base, node.id, 1)
+        }
       } else {
-        // 연결 없거나 양방향 → fallback
+        // 연결 없는 노드 → 좌표 기반 fallback (가장 짧은 탈출 방향)
         if (overlapX <= overlapY) {
           const goRight = (x + NODE_WIDTH / 2) >= (box.minX + box.maxX) / 2
           const base = goRight ? snapX(box.maxX + GRID_SNAP_X) : snapX(box.minX - GRID_SNAP_X)
@@ -252,10 +263,12 @@ export default function GraphView() {
       data: { ...n.data, layoutDirection: dir },
     }))
     const rawEdges = experimentsToEdges(fullList)
-    const groupNodeSets = groupsRef.current.map((g) => resolveGroupNodeIds(g, fullList))
+    // groupsRef.current 대신 클로저의 groups 사용: useCallback([groups])이므로
+    // 항상 최신 그룹 상태를 반영. ref는 useEffect 후 갱신되므로 stale할 수 있음.
+    const groupNodeSets = groups.map((g) => resolveGroupNodeIds(g, fullList))
     isLayoutingRef.current = true
     const laidOut    = applyDagreLayout(rawNodes, rawEdges, dir, groupNodeSets)
-    const pushedOut  = applyPushOut(laidOut, groupsRef.current, fullDataMap, dir === 'LR')
+    const pushedOut  = applyPushOut(laidOut, groups, fullDataMap, dir === 'LR')
 
     setNodes(annotateGroupMarkers(pushedOut))
     setEdges(rawEdges)
