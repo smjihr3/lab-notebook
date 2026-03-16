@@ -44,6 +44,18 @@ export default function GraphView() {
     return () => clearTimeout(t)
   }, [toast])
 
+  // ── 노드 추가 모드 ──────────────────────────────────────────
+  const [isAddNodeMode, setIsAddNodeMode] = useState(false)
+
+  useEffect(() => {
+    if (!isAddNodeMode) return
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setIsAddNodeMode(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isAddNodeMode])
+
   // ── 드래그 그룹 선택 상태 ────────────────────────────────────
   const [isSelectMode, setIsSelectMode]         = useState(false)
   const [selectedForGroup, setSelectedForGroup] = useState([])
@@ -361,21 +373,35 @@ export default function GraphView() {
 
   // ── ReactFlow 이벤트 ──────────────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
+    if (isAddNodeMode) {
+      const pos = layoutDir === 'LR'
+        ? { x: node.position.x + NODE_WIDTH + 80, y: node.position.y }
+        : { x: node.position.x, y: node.position.y + NODE_HEIGHT + 80 }
+      handleCreateAtPosition(pos, node.id)
+      return
+    }
     if (!isSelectMode) {
       setSelectedExp(node.data.experiment)
       setContextMenu(null)
     }
-  }, [isSelectMode])
+  }, [isSelectMode, isAddNodeMode, layoutDir, handleCreateAtPosition])
 
   const onNodeContextMenu = useCallback((event, node) => {
     event.preventDefault()
     setContextMenu({ x: event.clientX, y: event.clientY, experiment: node.data.experiment })
   }, [])
 
-  const onPaneClick = useCallback(() => {
+  const onPaneClick = useCallback((event) => {
     setContextMenu(null)
+    if (isAddNodeMode) {
+      const pos = rfInstanceRef.current?.screenToFlowPosition({
+        x: event.clientX, y: event.clientY,
+      }) ?? { x: 0, y: 0 }
+      handleCreateAtPosition(pos, null)
+      return
+    }
     if (isSelectMode) latestSelectionRef.current = []
-  }, [isSelectMode])
+  }, [isSelectMode, isAddNodeMode, handleCreateAtPosition])
 
   const onConnect = useCallback(async (params) => {
     const { source: precedingId, target: currentId } = params
@@ -512,7 +538,9 @@ export default function GraphView() {
     return `${prefix}-${String(nums.length > 0 ? Math.max(...nums) + 1 : 1).padStart(3, '0')}`
   }
 
-  async function handleCreateNote() {
+  // position: { x, y } flow 좌표, precedingId: 선행 실험 id or null
+  const handleCreateAtPosition = useCallback(async (position, precedingId) => {
+    setIsAddNodeMode(false)
     try {
       const base = '새 실험 노트'
       const titles = new Set(experiments.map((e) => e.title))
@@ -531,19 +559,40 @@ export default function GraphView() {
         procedure: { common: null, conditionTable: {}, observations: {} },
         dataBlocks: [],
         conclusion: null,
-        connections: { precedingExperiments: [], followingExperiments: [], references: [] },
+        connections: {
+          precedingExperiments: precedingId ? [precedingId] : [],
+          followingExperiments: [],
+          references: [],
+        },
       }
       const saved = await createExperiment(newExp)
+      if (precedingId) {
+        const precFull = fullDataRef.current[precedingId] ?? await getExperiment(precedingId)
+        if (precFull) {
+          const prevFollowing = precFull.connections?.followingExperiments ?? []
+          if (!prevFollowing.includes(saved.id)) {
+            const updatedPrec = {
+              ...precFull,
+              connections: {
+                ...(precFull.connections ?? {}),
+                followingExperiments: [...prevFollowing, saved.id],
+              },
+            }
+            fullDataRef.current[precedingId] = updatedPrec
+            await updateExperiment(updatedPrec)
+          }
+        }
+      }
       navigate(`/experiments/${saved.id}`)
     } catch (err) {
       console.error('새 실험 노트 생성 실패:', err)
       setToast({ message: err?.message ?? '새 실험 노트 생성에 실패했습니다.', type: 'error' })
     }
-  }
+  }, [experiments, createExperiment, getExperiment, updateExperiment, navigate])
 
   // ── 렌더 ──────────────────────────────────────────────────────
   return (
-    <div className="w-full h-full relative" onMouseUp={handleContainerMouseUp}>
+    <div className="w-full h-full relative" onMouseUp={handleContainerMouseUp} style={isAddNodeMode ? { cursor: 'crosshair' } : undefined}>
 
       {/* ReactFlowProvider로 GroupOverlay와 ReactFlow의 store 공유 */}
       <ReactFlowProvider>
@@ -587,12 +636,18 @@ export default function GraphView() {
         <span className="text-xs text-gray-500 bg-white/90 px-2 py-1 rounded-lg shadow border border-gray-200">
           {experiments.length}개 실험
         </span>
-        <button
-          onClick={handleCreateNote}
-          className="text-xs bg-blue-500 text-white hover:bg-blue-600 px-2.5 py-1 rounded-lg shadow transition-colors"
-        >
-          + 새 실험 노트
-        </button>
+        {isAddNodeMode ? (
+          <span className="text-xs text-blue-600 bg-blue-50 border border-blue-300 px-2.5 py-1 rounded-lg shadow">
+            빈 공간 또는 노드를 클릭하세요 (ESC 취소)
+          </span>
+        ) : (
+          <button
+            onClick={() => setIsAddNodeMode(true)}
+            className="text-xs bg-blue-500 text-white hover:bg-blue-600 px-2.5 py-1 rounded-lg shadow transition-colors"
+          >
+            + 새 실험 노트
+          </button>
+        )}
         <button
           onClick={toggleDirection}
           className="text-xs bg-white/90 hover:bg-white border border-gray-200 px-2.5 py-1 rounded-lg shadow text-gray-600 transition-colors"
