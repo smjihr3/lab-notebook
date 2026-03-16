@@ -3,14 +3,13 @@ import { Handle, Position } from 'reactflow'
 import { NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
 
 export default function ExperimentNode({ data, selected }) {
-  const { experiment, shortTitle, style, statusLabel, layoutDirection, isGroupStart, isGroupEnd, onDelete } = data
+  const { experiment, shortTitle, style, statusLabel, isGroupStart, isGroupEnd, onDelete } = data
   const { bg, border, text } = style
-  const isLR = layoutDirection === 'LR'
   const [hovered, setHovered] = useState(false)
 
   return (
     <>
-      <Handle type="target" position={isLR ? Position.Left  : Position.Top} />
+      <Handle type="target" position={Position.Left} />
 
       <div
         style={{
@@ -81,7 +80,7 @@ export default function ExperimentNode({ data, selected }) {
         </div>
       </div>
 
-      <Handle type="source" position={isLR ? Position.Right : Position.Bottom} />
+      <Handle type="source" position={Position.Right} />
     </>
   )
 }
