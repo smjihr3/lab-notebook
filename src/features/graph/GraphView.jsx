@@ -119,6 +119,7 @@ export default function GraphView() {
     if (isLayoutingRef.current) return
     if (nodes.length === 0 || groups.length === 0) return
     const PADDING = 24, MARGIN = 16
+    const isLR = layoutDir === 'LR'
     const fullList = Object.values(fullDataRef.current)
     const groupBoxes = groups.map((group) => {
       const ids = resolveGroupNodeIds(group, fullList)
@@ -137,19 +138,38 @@ export default function GraphView() {
     let anyChange = false
     const updated = nodes.map((node) => {
       let { x, y } = node.position
+      const exp = fullDataRef.current[node.id]
+      const preceding  = new Set(exp?.connections?.precedingExperiments  ?? [])
+      const following  = new Set(exp?.connections?.followingExperiments  ?? [])
+
       for (const box of groupBoxes) {
         if (box.ids.has(node.id)) continue
         const overlapX = Math.min(x + NODE_WIDTH, box.maxX) - Math.max(x, box.minX)
         const overlapY = Math.min(y + NODE_HEIGHT, box.maxY) - Math.max(y, box.minY)
         if (overlapX <= 0 || overlapY <= 0) continue
-        if (overlapX <= overlapY) {
-          x = (x + NODE_WIDTH / 2) < (box.minX + box.maxX) / 2
-            ? box.minX - NODE_WIDTH - MARGIN
-            : box.maxX + MARGIN
+
+        const isFollower = [...preceding].some((id) => box.ids.has(id))
+        const isPreceder = [...following].some((id) => box.ids.has(id))
+
+        if (isFollower && !isPreceder) {
+          // N은 그룹의 후행 실험 → LR: 오른쪽, TB: 아래쪽
+          if (isLR) x = box.maxX + MARGIN
+          else      y = box.maxY + MARGIN
+        } else if (isPreceder && !isFollower) {
+          // N은 그룹의 선행 실험 → LR: 왼쪽, TB: 위쪽
+          if (isLR) x = box.minX - NODE_WIDTH - MARGIN
+          else      y = box.minY - NODE_HEIGHT - MARGIN
         } else {
-          y = (y + NODE_HEIGHT / 2) < (box.minY + box.maxY) / 2
-            ? box.minY - NODE_HEIGHT - MARGIN
-            : box.maxY + MARGIN
+          // 연결 없거나 양방향 → 최소 이동 거리 fallback
+          if (overlapX <= overlapY) {
+            x = (x + NODE_WIDTH / 2) < (box.minX + box.maxX) / 2
+              ? box.minX - NODE_WIDTH - MARGIN
+              : box.maxX + MARGIN
+          } else {
+            y = (y + NODE_HEIGHT / 2) < (box.minY + box.maxY) / 2
+              ? box.minY - NODE_HEIGHT - MARGIN
+              : box.maxY + MARGIN
+          }
         }
         anyChange = true
       }
