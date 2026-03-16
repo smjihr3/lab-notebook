@@ -148,13 +148,32 @@ export default function GraphView() {
         const overlapY = Math.min(y + NODE_HEIGHT, box.maxY) - Math.max(y, box.minY)
         if (overlapX <= 0 || overlapY <= 0) continue
 
-        const isFollower = [...preceding].some((id) => box.ids.has(id))
+        const parentIds  = [...preceding].filter((id) => box.ids.has(id))
+        const isFollower = parentIds.length > 0
         const isPreceder = [...following].some((id) => box.ids.has(id))
 
         if (isFollower && !isPreceder) {
-          // N은 그룹의 후행 실험 → LR: 오른쪽, TB: 아래쪽
-          if (isLR) x = box.maxX + MARGIN
-          else      y = box.maxY + MARGIN
+          // N은 그룹의 후행 실험
+          // P의 그룹 내 후행 실험 수로 분기 여부 판단
+          const parentInGroupFollowers = parentIds.flatMap(
+            (pid) => fullDataRef.current[pid]?.connections?.followingExperiments ?? []
+          ).filter((id) => box.ids.has(id))
+
+          if (parentInGroupFollowers.length >= 2) {
+            // 분기점 제외 노드 → LR: 그룹 아래 + P의 x열, TB: 그룹 오른쪽 + P의 y행
+            const parentNode = nodes.find((n) => n.id === parentIds[0])
+            if (isLR) {
+              y = box.maxY + MARGIN
+              if (parentNode) x = parentNode.position.x + NODE_WIDTH + MARGIN
+            } else {
+              x = box.maxX + MARGIN
+              if (parentNode) y = parentNode.position.y + NODE_HEIGHT + MARGIN
+            }
+          } else {
+            // 단순 제외 → LR: 오른쪽, TB: 아래쪽
+            if (isLR) x = box.maxX + MARGIN
+            else      y = box.maxY + MARGIN
+          }
         } else if (isPreceder && !isFollower) {
           // N은 그룹의 선행 실험 → LR: 왼쪽, TB: 위쪽
           if (isLR) x = box.minX - NODE_WIDTH - MARGIN
