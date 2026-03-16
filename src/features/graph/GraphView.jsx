@@ -775,9 +775,12 @@ export default function GraphView() {
     }
 
     // Step 3.5: 후행 노드 연쇄 이동 (A/B/C 케이스만, D는 방향 불명확)
+    // cascadeVisited: A/B/C 케이스 노드만 포함 — case D 노드는 cascade로 덮어쓸 수 있게 제외
     const allGroupNodeIds = new Set(groupBoundsArr.flatMap(({ groupNodeIds }) => [...groupNodeIds]))
     const nodeById        = Object.fromEntries(currentNodes.map((n) => [n.id, n]))
-    const cascadeVisited  = new Set([...updatedPositions.keys()])
+    const cascadeVisited  = new Set(
+      [...caseMap.entries()].filter(([, cl]) => cl !== 'D').map(([id]) => id)
+    )
     const cascadeQueue    = [...updatedPositions.keys()]
 
     while (cascadeQueue.length > 0) {
