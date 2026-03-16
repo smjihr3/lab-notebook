@@ -141,12 +141,13 @@ function applyPushOut(nodeList, groupList, fullData) {
 export default function GraphView() {
   const navigate = useNavigate()
   const { experiments, isReady, getExperiment, updateExperiment, createExperiment, deleteExperiment } = useExperiments()
-  const { groups, addGroup, updateGroup } = useGraphGroups()
+  const { groups, addGroup, updateGroup, removeGroup } = useGraphGroups()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [selectedExp, setSelectedExp]   = useState(null)
-  const [contextMenu, setContextMenu]   = useState(null)
+  const [contextMenu, setContextMenu]         = useState(null)
+  const [groupContextMenu, setGroupContextMenu] = useState(null) // { x, y, group }
   const [outcomePopup, setOutcomePopup] = useState(null)
   const [toast, setToast]               = useState(null)  // { message, type }
 
@@ -155,6 +156,14 @@ export default function GraphView() {
     const t = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(t)
   }, [toast])
+
+  // ── 그룹 컨텍스트 메뉴 ESC 닫기 ───────────────────────────────
+  useEffect(() => {
+    if (!groupContextMenu) return
+    function onKeyDown(e) { if (e.key === 'Escape') setGroupContextMenu(null) }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [groupContextMenu])
 
   // ── 노드 추가 모드 ──────────────────────────────────────────
   const [isAddNodeMode, setIsAddNodeMode] = useState(false)
@@ -535,6 +544,7 @@ export default function GraphView() {
 
   const onPaneClick = useCallback((event) => {
     setContextMenu(null)
+    setGroupContextMenu(null)
     if (isAddNodeMode) {
       const pos = rfInstanceRef.current?.screenToFlowPosition({
         x: event.clientX, y: event.clientY,
@@ -838,12 +848,24 @@ export default function GraphView() {
 
   // ── 렌더 ──────────────────────────────────────────────────────
   return (
-    <div className="w-full h-full relative" onMouseUp={handleContainerMouseUp} style={isAddNodeMode ? { cursor: 'crosshair' } : undefined}>
+    <div
+      className="w-full h-full relative"
+      onMouseUp={handleContainerMouseUp}
+      onMouseDown={() => setGroupContextMenu(null)}
+      style={isAddNodeMode ? { cursor: 'crosshair' } : undefined}
+    >
 
       {/* ReactFlowProvider로 GroupOverlay와 ReactFlow의 store 공유 */}
       <ReactFlowProvider>
         {/* GroupOverlay: ReactFlow보다 DOM에서 먼저 → 노드 아래 렌더 */}
-        <GroupOverlay groups={groups} groupNodeIdsMap={groupNodeIdsMap} />
+        <GroupOverlay
+          groups={groups}
+          groupNodeIdsMap={groupNodeIdsMap}
+          onGroupContextMenu={({ x, y, group }) => {
+            setContextMenu(null)
+            setGroupContextMenu({ x, y, group })
+          }}
+        />
 
         <ReactFlow
           nodes={nodes}
@@ -867,6 +889,22 @@ export default function GraphView() {
           <Controls />
         </ReactFlow>
       </ReactFlowProvider>
+
+      {/* 그룹 배경 우클릭 컨텍스트 메뉴 */}
+      {groupContextMenu && (
+        <div
+          style={{ position: 'fixed', top: groupContextMenu.y, left: groupContextMenu.x, zIndex: 9999 }}
+          className="bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-36"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => { removeGroup(groupContextMenu.group.id); setGroupContextMenu(null) }}
+            className="w-full text-left px-3 py-1.5 text-sm text-red-500 hover:bg-red-50"
+          >
+            그룹 삭제
+          </button>
+        </div>
+      )}
 
       {/* 그룹 목록 패널 */}
       <GroupListPanel

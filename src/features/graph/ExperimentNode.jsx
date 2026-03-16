@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Handle, Position } from 'reactflow'
+import { Trash2 } from 'lucide-react'
 import { NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
 
 export default function ExperimentNode({ data, selected }) {
   const { experiment, shortTitle, style, statusLabel, isGroupStart, isGroupEnd, onDelete } = data
   const { bg, border, text } = style
   const [hovered, setHovered] = useState(false)
+  const [trashHovered, setTrashHovered] = useState(false)
 
   return (
     <>
@@ -33,20 +35,22 @@ export default function ExperimentNode({ data, selected }) {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        {/* 삭제 버튼 */}
+        {/* 삭제 버튼 (우하단) */}
         {hovered && onDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(experiment.id) }}
+            onMouseEnter={() => setTrashHovered(true)}
+            onMouseLeave={() => setTrashHovered(false)}
             title="삭제"
             style={{
-              position: 'absolute', top: 4, left: 6,
+              position: 'absolute', bottom: 6, right: 8,
               background: 'none', border: 'none', cursor: 'pointer',
-              color: '#ef4444', fontSize: 16, lineHeight: 1, padding: 0,
+              color: trashHovered ? '#ef4444' : '#94a3b8',
+              padding: 0, lineHeight: 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: 18, height: 18,
             }}
           >
-            &times;
+            <Trash2 size={14} />
           </button>
         )}
 

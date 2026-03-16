@@ -3,7 +3,7 @@ import { NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
 
 // ReactFlowProvider 컨텍스트 안에서 useStore로 nodeInternals와
 // transform을 구독하여 pan/zoom 시 그룹 배경을 실시간 갱신.
-export default function GroupOverlay({ groups, groupNodeIdsMap }) {
+export default function GroupOverlay({ groups, groupNodeIdsMap, onGroupContextMenu }) {
   // ReactFlow v11: state.transform = [translateX, translateY, zoom]
   const nodeInternals = useStore((s) => s.nodeInternals)
   const transform     = useStore((s) => s.transform)
@@ -21,6 +21,7 @@ export default function GroupOverlay({ groups, groupNodeIdsMap }) {
               nodeIds={nodeIds}
               nodeInternals={nodeInternals}
               transform={transform}
+              onContextMenu={onGroupContextMenu}
             />
           )
         })}
@@ -30,7 +31,7 @@ export default function GroupOverlay({ groups, groupNodeIdsMap }) {
 }
 
 // ── 그룹 직사각형 배경 ───────────────────────────────────────────
-function GroupRect({ group, nodeIds, nodeInternals, transform }) {
+function GroupRect({ group, nodeIds, nodeInternals, transform, onContextMenu }) {
   const [tx, ty, zoom] = transform
   const w       = NODE_WIDTH  * zoom
   const h       = NODE_HEIGHT * zoom
@@ -69,6 +70,12 @@ function GroupRect({ group, nodeIds, nodeInternals, transform }) {
         stroke={group.color}
         strokeWidth={2}
         strokeDasharray="6 3"
+        style={{ pointerEvents: 'all', cursor: 'context-menu' }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onContextMenu?.({ x: e.clientX, y: e.clientY, group })
+        }}
       />
       <text
         x={minX + 8}
