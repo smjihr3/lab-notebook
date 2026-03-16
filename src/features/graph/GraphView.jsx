@@ -484,6 +484,15 @@ export default function GraphView() {
       // fullDataRef에 즉시 등록
       fullDataRef.current[saved.id] = saved
 
+      // 선행 실험이 그룹 내부 노드인지 확인 (following 업데이트 전에 해야 resolveGroupNodeIds가
+      // 새 노드를 포함하지 않아 정확한 그룹 포함 여부를 판단할 수 있음)
+      const groupsContainingPreceding = precedingId
+        ? groupsRef.current.filter((g) => {
+            const gIds = resolveGroupNodeIds(g, Object.values(fullDataRef.current))
+            return gIds.has(precedingId)
+          })
+        : []
+
       // 선행 실험 followingExperiments 업데이트
       if (precedingId) {
         const precFull = fullDataRef.current[precedingId] ?? await getExperiment(precedingId)
@@ -500,6 +509,20 @@ export default function GraphView() {
             fullDataRef.current[precedingId] = updatedPrec
             await updateExperiment(updatedPrec)
           }
+        }
+      }
+
+      // 그룹 포함 선행 노드가 있으면 blockedEdge 추가 → 새 노드가 그룹에 흡수되지 않도록.
+      // A.followingExperiments에 새 노드가 추가된 후 resolveGroupNodeIds가 BFS로
+      // 새 노드까지 포함하게 되어 box.ids.has(newId) = true → 밀어내기 건너뜀 버그 방지.
+      for (const group of groupsContainingPreceding) {
+        const alreadyBlocked = (group.blockedEdges ?? []).some(
+          (e) => e.from === precedingId && e.to === saved.id
+        )
+        if (!alreadyBlocked) {
+          updateGroup(group.id, {
+            blockedEdges: [...(group.blockedEdges ?? []), { from: precedingId, to: saved.id }],
+          })
         }
       }
 
@@ -526,7 +549,7 @@ export default function GraphView() {
       console.error('새 실험 노트 생성 실패:', err)
       setToast({ message: err?.message ?? '새 실험 노트 생성에 실패했습니다.', type: 'error' })
     }
-  }, [experiments, createExperiment, getExperiment, updateExperiment])
+  }, [experiments, createExperiment, getExperiment, updateExperiment, updateGroup])
 
   // ── ReactFlow 이벤트 ──────────────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
@@ -578,6 +601,15 @@ export default function GraphView() {
       fullDataRef.current[currentId] = updated
       await updateExperiment(updated)
 
+      // source의 followingExperiments 업데이트 전에 그룹 포함 여부 확인.
+      // 업데이트 후에는 resolveGroupNodeIds가 currentId까지 포함하므로
+      // gIds.has(currentId) 판단이 부정확해짐.
+      const fullListSnapshot = Object.values(fullDataRef.current)
+      const groupsForEdge = groupsRef.current.filter((g) => {
+        const gIds = resolveGroupNodeIds(g, fullListSnapshot)
+        return gIds.has(precedingId) && !gIds.has(currentId)
+      })
+
       const sourceFull = fullDataRef.current[precedingId]
       if (sourceFull) {
         const prevFollowing = sourceFull.connections?.followingExperiments ?? []
@@ -592,6 +624,20 @@ export default function GraphView() {
         }
       }
 
+      // source가 그룹 내부이고 target이 외부인 경우 blockedEdge 추가.
+      // 이후 resolveGroupNodeIds BFS가 source→target 엣지를 따라
+      // target을 그룹에 포함시키는 것을 방지.
+      for (const group of groupsForEdge) {
+        const alreadyBlocked = (group.blockedEdges ?? []).some(
+          (e) => e.from === precedingId && e.to === currentId
+        )
+        if (!alreadyBlocked) {
+          updateGroup(group.id, {
+            blockedEdges: [...(group.blockedEdges ?? []), { from: precedingId, to: currentId }],
+          })
+        }
+      }
+
       setEdges((eds) => addEdge(
         { ...params, type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed } },
         eds,
@@ -599,7 +645,7 @@ export default function GraphView() {
     } catch (err) {
       console.error('Connect failed:', err)
     }
-  }, [getExperiment, updateExperiment])
+  }, [getExperiment, updateExperiment, updateGroup])
 
   // ── 그룹에서 노드 제외 ────────────────────────────────────────
   function handleExcludeFromGroup(experimentId, groupId) {
