@@ -40,24 +40,31 @@ export default function GraphContextMenu({
     resolveGroupNodeIds(g, experiments ?? []).has(experiment.id)
   )
 
-  // 실험의 followingExperiments (fullDataRef에서 재구성된 데이터 사용)
+  // 실험의 followingExperiments / precedingExperiments (fullDataRef에서 재구성된 데이터 사용)
   const expFull     = (experiments ?? []).find((e) => e.id === experiment.id) ?? experiment
-  const followers   = expFull.connections?.followingExperiments ?? []
+  const followers   = expFull.connections?.followingExperiments  ?? []
+  const predecessors = expFull.connections?.precedingExperiments ?? []
 
+  // ── 새 그룹의 시작점으로 지정 ─────────────────────────────────
   function handleAddGroup() {
     if (!newGroupName.trim()) return
+    // 선행이 있으면 openEdges 생성
+    const openEdges = predecessors.map((precId) => ({ from: precId, to: experiment.id }))
     addGroup({
       id: generateGroupId(groups),
       name: newGroupName.trim(),
       color: newGroupColor,
       startNodeIds: [experiment.id],
+      endNodeIds: [],
+      openEdges,
       blockedEdges: [],
       terminalNodeIds: [],
     })
     onClose()
   }
 
-  // 끝점 지정: followingExperiments 유무에 따라 blockedEdges / terminalNodeIds 분기
+  // ── 끝점 지정 ─────────────────────────────────────────────────
+  // followingExperiments 유무에 따라 blockedEdges / terminalNodeIds 분기
   // 설정 전 역방향 BFS로 경로 위의 기존 blockedEdges를 제거
   function handleSetEnd(groupId) {
     const g = groups.find((g) => g.id === groupId)
@@ -68,9 +75,9 @@ export default function GraphContextMenu({
 
     // 역방향 BFS: X에서 startNodeIds 방향으로 거슬러 올라가며
     // 경로 위에 있는 blockedEdges를 수집하여 제거
-    const visited      = new Set()
-    const queue        = [experiment.id]
-    const edgesToRemove = new Set() // "from→to" 문자열
+    const visited       = new Set()
+    const queue         = [experiment.id]
+    const edgesToRemove = new Set()
 
     while (queue.length > 0) {
       const nodeId = queue.shift()
@@ -92,6 +99,9 @@ export default function GraphContextMenu({
       (e) => !edgesToRemove.has(`${e.from}→${e.to}`)
     )
 
+    // endNodeIds에 추가
+    const newEndIds = [...new Set([...(g.endNodeIds ?? []), experiment.id])]
+
     if (followers.length > 0) {
       const newEdges = [...filteredBlockedEdges]
       for (const followerId of followers) {
@@ -99,46 +109,62 @@ export default function GraphContextMenu({
           newEdges.push({ from: experiment.id, to: followerId })
         }
       }
-      updateGroup(groupId, { blockedEdges: newEdges })
+      updateGroup(groupId, { blockedEdges: newEdges, endNodeIds: newEndIds })
     } else {
       const existing = g.terminalNodeIds ?? []
       updateGroup(groupId, {
         blockedEdges: filteredBlockedEdges,
         terminalNodeIds: existing.includes(experiment.id) ? existing : [...existing, experiment.id],
+        endNodeIds: newEndIds,
       })
     }
     onClose()
   }
 
-  // 끝점 해제: blockedEdges(from === X) 전부 제거 + terminalNodeIds에서 제거
+  // ── 끝점 해제 ─────────────────────────────────────────────────
   function handleUnsetEnd(groupId) {
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
     updateGroup(groupId, {
       blockedEdges:    (g.blockedEdges    ?? []).filter((e) => e.from !== experiment.id),
       terminalNodeIds: (g.terminalNodeIds ?? []).filter((id) => id !== experiment.id),
+      endNodeIds:      (g.endNodeIds      ?? []).filter((id) => id !== experiment.id),
     })
     onClose()
   }
 
+  // ── 시작점 추가 ───────────────────────────────────────────────
   function handleAddStart(groupId) {
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
     const existing = getStartIds(g)
-    if (!existing.includes(experiment.id)) {
-      updateGroup(groupId, { startNodeIds: [...existing, experiment.id] })
+    if (existing.includes(experiment.id)) { onClose(); return }
+
+    // 선행이 있으면 openEdges에 추가
+    const newOpenEdges = [...(g.openEdges ?? [])]
+    for (const precId of predecessors) {
+      if (!newOpenEdges.some((e) => e.from === precId && e.to === experiment.id)) {
+        newOpenEdges.push({ from: precId, to: experiment.id })
+      }
     }
+
+    updateGroup(groupId, {
+      startNodeIds: [...existing, experiment.id],
+      openEdges: newOpenEdges,
+    })
     onClose()
   }
 
+  // ── 시작점 해제 ───────────────────────────────────────────────
   function handleUnsetStart(groupId) {
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
-    const newIds = getStartIds(g).filter((id) => id !== experiment.id)
+    const newIds       = getStartIds(g).filter((id) => id !== experiment.id)
+    const newOpenEdges = (g.openEdges ?? []).filter((e) => e.to !== experiment.id)
     if (newIds.length === 0) {
       removeGroup(g.id)
     } else {
-      updateGroup(g.id, { startNodeIds: newIds })
+      updateGroup(g.id, { startNodeIds: newIds, openEdges: newOpenEdges })
     }
     onClose()
   }

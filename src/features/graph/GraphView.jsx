@@ -18,7 +18,7 @@ import GroupOverlay from './GroupOverlay'
 import { useGraphGroups } from './GraphGroupProvider'
 import {
   resolveGroupNodeIds, generateGroupId, GROUP_COLORS,
-  getGroupEndpointNodeIds, migrateGroupEndNodes, isEndNode,
+  migrateGroupData, isEndNode,
 } from './graphGroups'
 
 const nodeTypes = {
@@ -239,8 +239,8 @@ export default function GraphView() {
     const endIds   = new Set()
     for (const group of groups) {
       const groupNodeIds = resolveGroupNodeIds(group, fullList)
-      for (const nodeId of groupNodeIds) {
-        if (isEndNode(nodeId, group, groupNodeIds, fullList)) endIds.add(nodeId)
+      for (const id of group.endNodeIds ?? []) {
+        if (isEndNode(id, group, groupNodeIds)) endIds.add(id)
       }
     }
     return nodeList.map((n) => ({
@@ -309,12 +309,12 @@ export default function GraphView() {
           }
         }
         fullDataRef.current = map
-        // 구형 endNodeIds → blockedEdges/terminalNodeIds 마이그레이션 (1회)
+        // 구형 데이터 마이그레이션 (1회):
+        // endNodeIds → blockedEdges/terminalNodeIds, startNodeIds 선행 → openEdges
         if (!migrationDoneRef.current) {
           migrationDoneRef.current = true
           for (const group of groupsRef.current) {
-            if (!group.endNodeIds?.length) continue
-            const migrated = migrateGroupEndNodes(group, map)
+            const migrated = migrateGroupData(group, map)
             if (migrated) updateGroup(group.id, migrated)
           }
         }
@@ -421,6 +421,18 @@ export default function GraphView() {
       .filter((n) => (fullDataRef.current[n.id]?.connections?.followingExperiments ?? []).length === 0)
       .map((n) => n.id)
 
+    // openEdges: 각 시작 노드의 선행 중 선택 범위 밖에 있는 노드 → 엣지 등록
+    const openEdges = []
+    for (const startId of startNodeIds) {
+      const exp = fullDataRef.current[startId]
+      for (const precId of exp?.connections?.precedingExperiments ?? []) {
+        if (!selectedIds.has(precId)) openEdges.push({ from: precId, to: startId })
+      }
+    }
+
+    // endNodeIds: blockedEdges.from + terminalNodeIds
+    const endNodeIds = [...new Set([...blockedEdges.map((e) => e.from), ...terminalNodeIds])]
+
     if (groupCreateTarget === 'new') {
       if (!groupCreateName.trim()) return
       addGroup({
@@ -428,11 +440,13 @@ export default function GraphView() {
         name: groupCreateName.trim(),
         color: groupCreateColor,
         startNodeIds,
+        endNodeIds,
+        openEdges,
         blockedEdges,
         terminalNodeIds,
       })
     } else {
-      updateGroup(groupCreateTarget, { startNodeIds, blockedEdges, terminalNodeIds })
+      updateGroup(groupCreateTarget, { startNodeIds, endNodeIds, openEdges, blockedEdges, terminalNodeIds })
     }
 
     setGroupCreatePopup(false)
@@ -484,15 +498,6 @@ export default function GraphView() {
       // fullDataRef에 즉시 등록
       fullDataRef.current[saved.id] = saved
 
-      // 선행 실험이 그룹 내부 노드인지 확인 (following 업데이트 전에 해야 resolveGroupNodeIds가
-      // 새 노드를 포함하지 않아 정확한 그룹 포함 여부를 판단할 수 있음)
-      const groupsContainingPreceding = precedingId
-        ? groupsRef.current.filter((g) => {
-            const gIds = resolveGroupNodeIds(g, Object.values(fullDataRef.current))
-            return gIds.has(precedingId)
-          })
-        : []
-
       // 선행 실험 followingExperiments 업데이트
       if (precedingId) {
         const precFull = fullDataRef.current[precedingId] ?? await getExperiment(precedingId)
@@ -509,20 +514,6 @@ export default function GraphView() {
             fullDataRef.current[precedingId] = updatedPrec
             await updateExperiment(updatedPrec)
           }
-        }
-      }
-
-      // 그룹 포함 선행 노드가 있으면 blockedEdge 추가 → 새 노드가 그룹에 흡수되지 않도록.
-      // A.followingExperiments에 새 노드가 추가된 후 resolveGroupNodeIds가 BFS로
-      // 새 노드까지 포함하게 되어 box.ids.has(newId) = true → 밀어내기 건너뜀 버그 방지.
-      for (const group of groupsContainingPreceding) {
-        const alreadyBlocked = (group.blockedEdges ?? []).some(
-          (e) => e.from === precedingId && e.to === saved.id
-        )
-        if (!alreadyBlocked) {
-          updateGroup(group.id, {
-            blockedEdges: [...(group.blockedEdges ?? []), { from: precedingId, to: saved.id }],
-          })
         }
       }
 
@@ -549,7 +540,7 @@ export default function GraphView() {
       console.error('새 실험 노트 생성 실패:', err)
       setToast({ message: err?.message ?? '새 실험 노트 생성에 실패했습니다.', type: 'error' })
     }
-  }, [experiments, createExperiment, getExperiment, updateExperiment, updateGroup])
+  }, [experiments, createExperiment, getExperiment, updateExperiment])
 
   // ── ReactFlow 이벤트 ──────────────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
@@ -601,15 +592,6 @@ export default function GraphView() {
       fullDataRef.current[currentId] = updated
       await updateExperiment(updated)
 
-      // source의 followingExperiments 업데이트 전에 그룹 포함 여부 확인.
-      // 업데이트 후에는 resolveGroupNodeIds가 currentId까지 포함하므로
-      // gIds.has(currentId) 판단이 부정확해짐.
-      const fullListSnapshot = Object.values(fullDataRef.current)
-      const groupsForEdge = groupsRef.current.filter((g) => {
-        const gIds = resolveGroupNodeIds(g, fullListSnapshot)
-        return gIds.has(precedingId) && !gIds.has(currentId)
-      })
-
       const sourceFull = fullDataRef.current[precedingId]
       if (sourceFull) {
         const prevFollowing = sourceFull.connections?.followingExperiments ?? []
@@ -624,20 +606,6 @@ export default function GraphView() {
         }
       }
 
-      // source가 그룹 내부이고 target이 외부인 경우 blockedEdge 추가.
-      // 이후 resolveGroupNodeIds BFS가 source→target 엣지를 따라
-      // target을 그룹에 포함시키는 것을 방지.
-      for (const group of groupsForEdge) {
-        const alreadyBlocked = (group.blockedEdges ?? []).some(
-          (e) => e.from === precedingId && e.to === currentId
-        )
-        if (!alreadyBlocked) {
-          updateGroup(group.id, {
-            blockedEdges: [...(group.blockedEdges ?? []), { from: precedingId, to: currentId }],
-          })
-        }
-      }
-
       setEdges((eds) => addEdge(
         { ...params, type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed } },
         eds,
@@ -645,7 +613,7 @@ export default function GraphView() {
     } catch (err) {
       console.error('Connect failed:', err)
     }
-  }, [getExperiment, updateExperiment, updateGroup])
+  }, [getExperiment, updateExperiment])
 
   // ── 그룹에서 노드 제외 ────────────────────────────────────────
   function handleExcludeFromGroup(experimentId, groupId) {
@@ -658,40 +626,48 @@ export default function GraphView() {
     const expX           = fullDataRef.current[experimentId]
     const followers      = expX?.connections?.followingExperiments ?? []
 
-    let blockedEdges    = [...(group.blockedEdges    ?? [])]
-    let terminalNodeIds = [...(group.terminalNodeIds ?? [])]
-
     if (startNodeIds.includes(experimentId)) {
-      // X의 그룹 내 후속 노드들을 새 시작점으로 승격
+      // Case 1: X는 시작 노드 — 그룹 내 후속을 새 시작점으로 승격
       const inGroupFollowers = followers.filter((id) => currentNodeIds.has(id))
       const newStartNodeIds = [
         ...startNodeIds.filter((id) => id !== experimentId),
         ...inGroupFollowers.filter((id) => !startNodeIds.includes(id)),
       ]
-      const newBlockedEdges = blockedEdges.filter((e) => e.from !== experimentId)
-      const newTerminalNodeIds = terminalNodeIds.filter((id) => id !== experimentId)
       updateGroup(groupId, {
-        startNodeIds: newStartNodeIds,
-        blockedEdges: newBlockedEdges,
-        terminalNodeIds: newTerminalNodeIds,
+        startNodeIds:    newStartNodeIds,
+        openEdges:       (group.openEdges       ?? []).filter((e) => e.to !== experimentId),
+        blockedEdges:    (group.blockedEdges    ?? []).filter((e) => e.from !== experimentId),
+        terminalNodeIds: (group.terminalNodeIds ?? []).filter((id) => id !== experimentId),
+        endNodeIds:      (group.endNodeIds      ?? []).filter((id) => id !== experimentId),
       })
       return
     }
 
+    // Case 2: X는 시작 노드 아님 — 부모에서 X로의 blockedEdge 추가
     const groupParents = (expX?.connections?.precedingExperiments ?? [])
       .filter((id) => currentNodeIds.has(id))
     if (groupParents.length === 0) return
 
+    let newBlockedEdges = [...(group.blockedEdges ?? [])]
     for (const parentId of groupParents) {
-      if (!blockedEdges.some((e) => e.from === parentId && e.to === experimentId)) {
-        blockedEdges.push({ from: parentId, to: experimentId })
+      if (!newBlockedEdges.some((e) => e.from === parentId && e.to === experimentId)) {
+        newBlockedEdges.push({ from: parentId, to: experimentId })
       }
     }
 
-    blockedEdges    = blockedEdges.filter((e) => e.from !== experimentId)
-    terminalNodeIds = terminalNodeIds.filter((id) => id !== experimentId)
+    // 새 blockedEdges로 재계산한 그룹 노드 ID
+    const newGroupNodeIds = resolveGroupNodeIds({ ...group, blockedEdges: newBlockedEdges }, fullList)
 
-    updateGroup(groupId, { blockedEdges, terminalNodeIds })
+    // 더 이상 도달 불가능한 노드의 blockedEdges/terminalNodeIds 제거
+    newBlockedEdges = newBlockedEdges.filter((e) => newGroupNodeIds.has(e.from))
+    const newTerminalNodeIds = (group.terminalNodeIds ?? []).filter((id) => newGroupNodeIds.has(id))
+    const newEndNodeIds      = (group.endNodeIds      ?? []).filter((id) => id !== experimentId)
+
+    updateGroup(groupId, {
+      blockedEdges:    newBlockedEdges,
+      terminalNodeIds: newTerminalNodeIds,
+      endNodeIds:      newEndNodeIds,
+    })
   }
 
   // ── 실험 노트 삭제 ─────────────────────────────────────────────

@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useGraphGroups } from './GraphGroupProvider'
 import {
-  generateGroupId, resolveGroupNodeIds, getGroupBounds,
-  getGroupEndpointNodeIds, isEndNode, GROUP_COLORS,
+  generateGroupId, resolveGroupNodeIds, getGroupBounds, GROUP_COLORS,
 } from './graphGroups'
 
 // ── 실험 검색 입력 ────────────────────────────────────────────
@@ -69,13 +68,25 @@ function NewGroupForm({ experiments, onSubmit, onCancel }) {
 
   function handleSubmit() {
     if (!name.trim() || !startId) return
+    const startExp     = experiments.find((e) => e.id === startId)
+    const predecessors = startExp?.connections?.precedingExperiments ?? []
+    const openEdges    = predecessors.map((precId) => ({ from: precId, to: startId }))
+
+    const endExp      = endId ? experiments.find((e) => e.id === endId) : null
+    const endFollowers = endExp?.connections?.followingExperiments ?? []
+    const blockedEdges    = endFollowers.map((f) => ({ from: endId, to: f }))
+    const terminalNodeIds = endId && endFollowers.length === 0 ? [endId] : []
+    const endNodeIds      = endId ? [endId] : []
+
     onSubmit({
       id: generateGroupId(groups),
       name: name.trim(),
       color,
       startNodeIds: [startId],
-      blockedEdges: [],
-      terminalNodeIds: endId ? [endId] : [],
+      endNodeIds,
+      openEdges,
+      blockedEdges,
+      terminalNodeIds,
     })
   }
 
@@ -159,9 +170,8 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
 
   const startNodeIds  = group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : [])
   const nodeIds       = resolveGroupNodeIds(group, experiments)
-  const endpointIds   = new Set(
-    [...getGroupEndpointNodeIds(group)].filter((id) => isEndNode(id, group, nodeIds, experiments))
-  )
+  // endNodeIds 기반 끝점 (UI용, 실제 그룹 내에 있는 것만)
+  const endpointIds   = new Set((group.endNodeIds ?? []).filter((id) => nodeIds.has(id)))
   const excludeIds    = [...startNodeIds, ...endpointIds]
 
   // 노드 중심 좌표 계산
@@ -223,13 +233,33 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
 
   function handleAddEnd(id) {
     if (!id || endpointIds.has(id)) return
-    const existing = group.terminalNodeIds ?? []
-    if (!existing.includes(id)) updateGroup(group.id, { terminalNodeIds: [...existing, id] })
+    const fullExps   = getFullExperiments?.() ?? experiments
+    const exp        = fullExps.find((e) => e.id === id)
+    const followers  = exp?.connections?.followingExperiments ?? []
+
+    const newEndIds          = [...new Set([...(group.endNodeIds ?? []), id])]
+    const newBlockedEdges    = [...(group.blockedEdges    ?? [])]
+    const newTerminalNodeIds = [...(group.terminalNodeIds ?? [])]
+
+    if (followers.length > 0) {
+      for (const followerId of followers) {
+        if (!newBlockedEdges.some((e) => e.from === id && e.to === followerId)) {
+          newBlockedEdges.push({ from: id, to: followerId })
+        }
+      }
+    } else {
+      if (!newTerminalNodeIds.includes(id)) newTerminalNodeIds.push(id)
+    }
+
+    updateGroup(group.id, {
+      endNodeIds: newEndIds, blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds,
+    })
     setAddingEnd(false)
   }
 
   function handleRemoveEndpoint(id) {
     updateGroup(group.id, {
+      endNodeIds:      (group.endNodeIds      ?? []).filter((x) => x !== id),
       blockedEdges:    (group.blockedEdges    ?? []).filter((e) => e.from !== id),
       terminalNodeIds: (group.terminalNodeIds ?? []).filter((x) => x !== id),
     })
@@ -237,13 +267,29 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
 
   function handleAddStart(id) {
     if (!id || startNodeIds.includes(id)) return
-    updateGroup(group.id, { startNodeIds: [...startNodeIds, id] })
+    const fullExps     = getFullExperiments?.() ?? experiments
+    const exp          = fullExps.find((e) => e.id === id)
+    const predecessors = exp?.connections?.precedingExperiments ?? []
+
+    const newOpenEdges = [...(group.openEdges ?? [])]
+    for (const precId of predecessors) {
+      if (!newOpenEdges.some((e) => e.from === precId && e.to === id)) {
+        newOpenEdges.push({ from: precId, to: id })
+      }
+    }
+
+    updateGroup(group.id, { startNodeIds: [...startNodeIds, id], openEdges: newOpenEdges })
     setAddingStart(false)
   }
 
   function handleRemoveStart(id) {
-    const newIds = startNodeIds.filter((x) => x !== id)
-    if (newIds.length === 0) { removeGroup(group.id) } else { updateGroup(group.id, { startNodeIds: newIds }) }
+    const newIds       = startNodeIds.filter((x) => x !== id)
+    const newOpenEdges = (group.openEdges ?? []).filter((e) => e.to !== id)
+    if (newIds.length === 0) {
+      removeGroup(group.id)
+    } else {
+      updateGroup(group.id, { startNodeIds: newIds, openEdges: newOpenEdges })
+    }
   }
 
   return (
