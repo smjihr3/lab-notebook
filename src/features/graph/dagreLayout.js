@@ -79,30 +79,25 @@ export function applyDagreLayout(nodes, edges, groupNodeSets = []) {
     compactGroupColumns(layouted, edges, groupNodeSets)
   }
 
-  // 3. 그룹 bounding box와 겹치는 비그룹 노드 분리
-  if (groupNodeSets.length > 0) {
-    separateNonGroupNodes(layouted, groupNodeSets, edges)
-  }
-
-  // 4. 분기 서브트리 간격 확보 → protectedGaps 반환
+  // 3. 분기 서브트리 간격 확보 → protectedGaps 반환
   const protectedGaps = reserveSubtreeSpace(layouted, edges)
 
-  // 5. 분기점 선행 노드를 최상단 후속과 평행 배치
+  // 4. 분기점 선행 노드를 최상단 후속과 평행 배치
   alignParentToFirstChild(layouted, edges)
 
-  // 6. 일대일 쌍 y 정렬 → alignedPairs 반환 (이후 y 고정)
+  // 5. 일대일 쌍 y 정렬 → alignedPairs 반환 (이후 y 고정)
   const alignedPairs = alignOneToOnePairs(layouted, edges)
 
-  // 7. 겹침 최종 해소 (최대 10회)
+  // 6. 겹침 최종 해소 (최대 10회)
   resolveOverlaps(layouted, alignedPairs)
 
-  // 8. 빈 열/행 제거 (보호 간격 유지)
+  // 7. 빈 열/행 제거 (보호 간격 유지)
   compactLayout(layouted, protectedGaps, alignedPairs)
 
-  // 9. 최종 간격 확보 (alignedPairs y 고정)
+  // 8. 최종 간격 확보 (alignedPairs y 고정)
   spreadLRColumnsWithFixed(layouted, alignedPairs)
 
-  // 10. 그리드 스냅
+  // 9. 그리드 스냅
   for (const node of layouted) {
     node.position = {
       x: Math.round(node.position.x / GRID_SNAP_X) * GRID_SNAP_X,
@@ -110,7 +105,7 @@ export function applyDagreLayout(nodes, edges, groupNodeSets = []) {
     }
   }
 
-  // 11. 스냅 후 일대일 쌍 y 재보정
+  // 10. 스냅 후 일대일 쌍 y 재보정
   realignPairsAfterSnap(layouted, edges, alignedPairs)
 
   return layouted
