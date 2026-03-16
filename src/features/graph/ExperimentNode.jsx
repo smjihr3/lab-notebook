@@ -35,25 +35,6 @@ export default function ExperimentNode({ data, selected }) {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        {/* 삭제 버튼 (우하단, 항상 표시) */}
-        {onDelete && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(experiment.id) }}
-            onMouseEnter={() => setTrashHovered(true)}
-            onMouseLeave={() => setTrashHovered(false)}
-            title="삭제"
-            style={{
-              position: 'absolute', bottom: 6, right: 8,
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: trashHovered ? '#ef4444' : hovered ? '#94a3b8' : '#cbd5e1',
-              padding: 0, lineHeight: 1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
-
         {/* 그룹 핀/플래그 아이콘 */}
         {(isGroupStart || isGroupEnd) && (
           <div style={{
@@ -70,17 +51,35 @@ export default function ExperimentNode({ data, selected }) {
         <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.35 }}>
           {shortTitle}
         </div>
-        <div style={{
-          fontSize: 10,
-          backgroundColor: '#f1f5f9',
-          color: '#64748b',
-          borderRadius: 6,
-          padding: '2px 7px',
-          display: 'inline-block',
-          alignSelf: 'flex-start',
-          marginTop: 2,
-        }}>
-          {statusLabel}
+
+        {/* 진행 상황 태그 + 삭제 버튼 (같은 행) */}
+        <div style={{ display: 'flex', alignItems: 'center', marginTop: 2 }}>
+          <div style={{
+            fontSize: 10,
+            backgroundColor: '#f1f5f9',
+            color: '#64748b',
+            borderRadius: 6,
+            padding: '2px 7px',
+          }}>
+            {statusLabel}
+          </div>
+          {onDelete && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(experiment.id) }}
+              onMouseEnter={() => setTrashHovered(true)}
+              onMouseLeave={() => setTrashHovered(false)}
+              title="삭제"
+              style={{
+                marginLeft: 'auto',
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: trashHovered ? '#ef4444' : hovered ? '#94a3b8' : '#cbd5e1',
+                padding: 0, lineHeight: 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
         </div>
       </div>
 
