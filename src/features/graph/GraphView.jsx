@@ -26,6 +26,79 @@ const nodeTypes = {
   experimentNode: ExperimentNode,
 }
 
+// ── 형제 서브트리 재배치 (순수 함수) ──────────────────────────────
+// 노드 X가 그룹에서 제외된 직후, 같은 부모 P의 그룹 내 형제 서브트리를
+// X가 비운 y 슬롯 위로 당겨 올린다. Map<nodeId, {x,y}> 반환.
+function computeReshiftPositions(excludedNodeId, updatedGroupNodeIds, currentNodes, currentExperiments) {
+  const nodeById = Object.fromEntries(currentNodes.map((n) => [n.id, n]))
+  const expMap   = Object.fromEntries(currentExperiments.map((e) => [e.id, e]))
+
+  const xNode = nodeById[excludedNodeId]
+  if (!xNode) return new Map()
+  const xY = xNode.position.y
+
+  // 1. X의 그룹 내 부모 P 찾기 (업데이트된 그룹에 속한 선행)
+  const expX    = expMap[excludedNodeId]
+  const parentId = (expX?.connections?.precedingExperiments ?? [])
+    .find((id) => updatedGroupNodeIds.has(id))
+  if (!parentId) return new Map()
+
+  // 2. P의 그룹 내 후행 (X는 이미 제외 → 목록에 없음)
+  const expP = expMap[parentId]
+  const remainingSiblings = (expP?.connections?.followingExperiments ?? [])
+    .filter((id) => updatedGroupNodeIds.has(id))
+    .map((id) => nodeById[id])
+    .filter(Boolean)
+    .sort((a, b) => a.position.y - b.position.y)
+
+  if (remainingSiblings.length === 0) return new Map()
+
+  // 3. X보다 y가 큰 형제만 위로 당김
+  const lowerSiblings = remainingSiblings.filter((s) => s.position.y > xY)
+  if (lowerSiblings.length === 0) return new Map()
+
+  // BFS: 그룹 내 서브트리 수집
+  function getSubtreeInGroup(rootId) {
+    const visited = new Set()
+    const queue   = [rootId]
+    while (queue.length > 0) {
+      const id = queue.shift()
+      if (visited.has(id)) continue
+      visited.add(id)
+      for (const fid of expMap[id]?.connections?.followingExperiments ?? []) {
+        if (updatedGroupNodeIds.has(fid) && !visited.has(fid)) queue.push(fid)
+      }
+    }
+    return visited
+  }
+
+  const updatedPositions = new Map()
+  let currentY = xY
+
+  for (const sibling of lowerSiblings) {
+    const subtreeIds   = getSubtreeInGroup(sibling.id)
+    const subtreeNodes = [...subtreeIds].map((id) => nodeById[id]).filter(Boolean)
+    if (subtreeNodes.length === 0) continue
+
+    const subtreeMinY  = Math.min(...subtreeNodes.map((n) => n.position.y))
+    const subtreeMaxY  = Math.max(...subtreeNodes.map((n) => n.position.y))
+    // GRID_SNAP_Y = NODE_HEIGHT + NODESEP
+    const subtreeHeight = subtreeMaxY - subtreeMinY + GRID_SNAP_Y
+
+    const offset = currentY - sibling.position.y
+    if (offset !== 0) {
+      for (const nodeId of subtreeIds) {
+        const n = nodeById[nodeId]
+        if (!n) continue
+        updatedPositions.set(nodeId, { x: n.position.x, y: n.position.y + offset })
+      }
+    }
+    currentY += subtreeHeight
+  }
+
+  return updatedPositions
+}
+
 // ── 그룹 미포함 노드 밀어내기 (순수 함수, useEffect 외부) ─────────
 function applyPushOut(nodeList, groupList, fullData) {
   if (nodeList.length === 0 || groupList.length === 0) return nodeList
@@ -685,11 +758,19 @@ export default function GraphView() {
 
       const patch = { startNodeIds: newStartNodeIds, openEdges: newOpenEdges, blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
       updateGroup(groupId, patch)
-      pushNodesOutOfGroups(
-        groups.map((g) => g.id === groupId ? { ...group, ...patch } : g),
-        nodes,
-        fullList,
-      )
+      {
+        const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
+        const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
+        const pushOutMap  = computePushOutPositions(updatedGroups, nodes, fullList)
+        const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
+        const merged      = new Map([...pushOutMap, ...reshiftMap])
+        if (merged.size > 0) {
+          setNodes((prev) => prev.map((n) => {
+            const pos = merged.get(n.id)
+            return pos ? { ...n, position: pos } : n
+          }))
+        }
+      }
       return
     }
 
@@ -752,11 +833,19 @@ export default function GraphView() {
 
     const patch = { blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
     updateGroup(groupId, patch)
-    pushNodesOutOfGroups(
-      groups.map((g) => g.id === groupId ? { ...group, ...patch } : g),
-      nodes,
-      fullList,
-    )
+    {
+      const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
+      const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
+      const pushOutMap  = computePushOutPositions(updatedGroups, nodes, fullList)
+      const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
+      const merged      = new Map([...pushOutMap, ...reshiftMap])
+      if (merged.size > 0) {
+        setNodes((prev) => prev.map((n) => {
+          const pos = merged.get(n.id)
+          return pos ? { ...n, position: pos } : n
+        }))
+      }
+    }
   }
 
   // ── 실험 노트 삭제 ─────────────────────────────────────────────
