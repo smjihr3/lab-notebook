@@ -764,7 +764,19 @@ export default function GraphView() {
         // reshift 먼저 계산 → 적용된 좌표로 pushOut 계산 (그룹 bb가 축소된 상태 반영)
         const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
         const nodesAfterReshift = nodes.map((n) => { const p = reshiftMap.get(n.id); return p ? { ...n, position: p } : n })
-        const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
+        const expMapC1 = Object.fromEntries(fullList.map((e) => [e.id, e]))
+        const excludedSubtree = new Set()
+        const bfsQueue = [experimentId]
+        while (bfsQueue.length > 0) {
+          const cur = bfsQueue.shift()
+          if (excludedSubtree.has(cur)) continue
+          excludedSubtree.add(cur)
+          for (const fid of expMapC1[cur]?.connections?.followingExperiments ?? []) {
+            if (!updatedGroupNodeIds.has(fid)) bfsQueue.push(fid)
+          }
+        }
+        const nodesForPushOut = nodesAfterReshift.filter((n) => !excludedSubtree.has(n.id))
+        const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
         const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
         const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
         if (merged.size > 0) {
@@ -842,7 +854,18 @@ export default function GraphView() {
       // reshift 먼저 계산 → 적용된 좌표로 pushOut 계산 (그룹 bb가 축소된 상태 반영)
       const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
       const nodesAfterReshift = nodes.map((n) => { const p = reshiftMap.get(n.id); return p ? { ...n, position: p } : n })
-      const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
+      const excludedSubtree = new Set()
+      const bfsQueue = [experimentId]
+      while (bfsQueue.length > 0) {
+        const cur = bfsQueue.shift()
+        if (excludedSubtree.has(cur)) continue
+        excludedSubtree.add(cur)
+        for (const fid of expMap[cur]?.connections?.followingExperiments ?? []) {
+          if (!updatedGroupNodeIds.has(fid)) bfsQueue.push(fid)
+        }
+      }
+      const nodesForPushOut = nodesAfterReshift.filter((n) => !excludedSubtree.has(n.id))
+      const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
       const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
       const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
       if (merged.size > 0) {
