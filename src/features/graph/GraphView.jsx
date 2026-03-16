@@ -652,13 +652,14 @@ export default function GraphView() {
 
     // Step 2-3: 비포함 노드 순회 → 이동 좌표 계산
     const updatedPositions = new Map()
+    const caseMap          = new Map() // nodeId → 'A'|'B'|'C'|'D'
 
     for (const node of currentNodes) {
       if (node.type === 'groupBackground') continue
 
       let x = node.position.x
       let y = node.position.y
-      let moved = false
+      let caseLabel = ''
 
       for (const { groupNodeIds, minX, minY, maxX, maxY } of groupBoundsArr) {
         if (groupNodeIds.has(node.id)) continue
@@ -687,11 +688,13 @@ export default function GraphView() {
         if (isLR) {
           if (parentInGroup && !isBranch) {
             // 케이스 A: 단순 후행
+            caseLabel = 'A'
             const parentNode = currentNodes.find((n) => n.id === parentInGroup)
             x = Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
             y = parentNode ? parentNode.position.y : y
           } else if (parentInGroup && isBranch) {
             // 케이스 B: 분기 후행
+            caseLabel = 'B'
             const siblingNodes = siblingsInGroup
               .map((id) => currentNodes.find((n) => n.id === id)).filter(Boolean)
             const avgX = siblingNodes.length > 0
@@ -701,11 +704,13 @@ export default function GraphView() {
             y = Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
           } else if (childInGroup && !parentInGroup) {
             // 케이스 C: 선행
+            caseLabel = 'C'
             const childNode = currentNodes.find((n) => n.id === childInGroup)
             x = Math.floor((minX - 24) / GRID_SNAP_X) * GRID_SNAP_X - GRID_SNAP_X
             y = childNode ? childNode.position.y : y
           } else {
             // 케이스 D: 둘 다 없거나 둘 다 있음
+            caseLabel = 'D'
             const overlapX = Math.min(x + NODE_WIDTH, maxX) - Math.max(x, minX)
             const overlapY = Math.min(y + NODE_HEIGHT, maxY) - Math.max(y, minY)
             if (overlapX < overlapY) {
@@ -723,11 +728,13 @@ export default function GraphView() {
         } else {
           if (parentInGroup && !isBranch) {
             // 케이스 A: 단순 후행
+            caseLabel = 'A'
             const parentNode = currentNodes.find((n) => n.id === parentInGroup)
             x = parentNode ? parentNode.position.x : x
             y = Math.ceil((maxY + 24) / GRID_SNAP_Y) * GRID_SNAP_Y
           } else if (parentInGroup && isBranch) {
             // 케이스 B: 분기 후행
+            caseLabel = 'B'
             const siblingNodes = siblingsInGroup
               .map((id) => currentNodes.find((n) => n.id === id)).filter(Boolean)
             x = Math.ceil((maxX + 24) / GRID_SNAP_X) * GRID_SNAP_X
@@ -737,11 +744,13 @@ export default function GraphView() {
             y = Math.round(avgY / GRID_SNAP_Y) * GRID_SNAP_Y
           } else if (childInGroup && !parentInGroup) {
             // 케이스 C: 선행
+            caseLabel = 'C'
             const childNode = currentNodes.find((n) => n.id === childInGroup)
             x = childNode ? childNode.position.x : x
             y = Math.floor((minY - 24) / GRID_SNAP_Y) * GRID_SNAP_Y - GRID_SNAP_Y
           } else {
             // 케이스 D: LR과 동일
+            caseLabel = 'D'
             const overlapX = Math.min(x + NODE_WIDTH, maxX) - Math.max(x, minX)
             const overlapY = Math.min(y + NODE_HEIGHT, maxY) - Math.max(y, minY)
             if (overlapX < overlapY) {
@@ -757,11 +766,50 @@ export default function GraphView() {
             }
           }
         }
-
-        moved = true
       }
 
-      if (moved) updatedPositions.set(node.id, { x, y })
+      if (caseLabel) {
+        updatedPositions.set(node.id, { x, y })
+        caseMap.set(node.id, caseLabel)
+      }
+    }
+
+    // Step 3.5: 후행 노드 연쇄 이동 (A/B/C 케이스만, D는 방향 불명확)
+    const allGroupNodeIds = new Set(groupBoundsArr.flatMap(({ groupNodeIds }) => [...groupNodeIds]))
+    const nodeById        = Object.fromEntries(currentNodes.map((n) => [n.id, n]))
+    const cascadeVisited  = new Set([...updatedPositions.keys()])
+    const cascadeQueue    = [...updatedPositions.keys()]
+
+    while (cascadeQueue.length > 0) {
+      const parentId  = cascadeQueue.shift()
+      const cl        = caseMap.get(parentId)
+      if (!cl || cl === 'D') continue
+
+      const parentExp = expMap[parentId]
+      for (const followId of parentExp?.connections?.followingExperiments ?? []) {
+        if (cascadeVisited.has(followId)) continue
+        if (allGroupNodeIds.has(followId)) continue
+        cascadeVisited.add(followId)
+
+        const followNode = nodeById[followId]
+        if (!followNode) continue
+
+        const base = followNode.position
+        let nx = base.x, ny = base.y
+        if (isLR) {
+          if      (cl === 'A') nx += GRID_SNAP_X
+          else if (cl === 'B') ny += GRID_SNAP_Y
+          else if (cl === 'C') nx -= GRID_SNAP_X
+        } else {
+          if      (cl === 'A') ny += GRID_SNAP_Y
+          else if (cl === 'B') nx += GRID_SNAP_X
+          else if (cl === 'C') ny -= GRID_SNAP_Y
+        }
+
+        updatedPositions.set(followId, { x: nx, y: ny })
+        caseMap.set(followId, cl)
+        cascadeQueue.push(followId)
+      }
     }
 
     // Step 4: setNodes 1회 호출

@@ -233,13 +233,47 @@ function GroupItem({ group, experiments, allNodes, setCenter, getZoom, onRemove,
 
   function handleAddEnd(id) {
     if (!id || endpointIds.has(id)) return
-    const fullExps   = getFullExperiments?.() ?? experiments
-    const exp        = fullExps.find((e) => e.id === id)
-    const followers  = exp?.connections?.followingExperiments ?? []
+    const fullExps  = getFullExperiments?.() ?? experiments
+    const exp       = fullExps.find((e) => e.id === id)
+    const followers = exp?.connections?.followingExperiments ?? []
+    const expMap    = Object.fromEntries(fullExps.map((e) => [e.id, e]))
 
-    const newEndIds          = [...new Set([...(group.endNodeIds ?? []), id])]
-    const newBlockedEdges    = [...(group.blockedEdges    ?? [])]
-    const newTerminalNodeIds = [...(group.terminalNodeIds ?? [])]
+    // 역방향 BFS: E에서 startNodeIds까지 경로 탐색 → 경로상 기존 끝점 수집
+    const startIds      = new Set(group.startNodeIds ?? (group.startNodeId ? [group.startNodeId] : []))
+    const visited       = new Set()
+    const queue         = [id]
+    const edgesToRemove = new Set()
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()
+      if (visited.has(nodeId)) continue
+      visited.add(nodeId)
+      if (startIds.has(nodeId)) continue
+      const nodeExp = expMap[nodeId]
+      for (const precId of nodeExp?.connections?.precedingExperiments ?? []) {
+        if (visited.has(precId)) continue
+        if ((group.blockedEdges ?? []).some((e) => e.from === precId && e.to === nodeId))
+          edgesToRemove.add(`${precId}→${nodeId}`)
+        queue.push(precId)
+      }
+    }
+
+    const endNodesToRemove = new Set(
+      [...visited].filter((vid) => vid !== id && (group.endNodeIds ?? []).includes(vid))
+    )
+
+    const filteredBlockedEdges = (group.blockedEdges ?? []).filter(
+      (e) => !edgesToRemove.has(`${e.from}→${e.to}`) && !endNodesToRemove.has(e.from)
+    )
+    const filteredTerminalIds = (group.terminalNodeIds ?? []).filter((x) => !endNodesToRemove.has(x))
+
+    const newEndIds = [
+      ...(group.endNodeIds ?? []).filter((x) => !endNodesToRemove.has(x)),
+      id,
+    ].filter((x, i, arr) => arr.indexOf(x) === i)
+
+    const newBlockedEdges    = [...filteredBlockedEdges]
+    const newTerminalNodeIds = [...filteredTerminalIds]
 
     if (followers.length > 0) {
       for (const followerId of followers) {
