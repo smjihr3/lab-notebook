@@ -72,6 +72,7 @@ export default function GraphView() {
   const migrationDoneRef   = useRef(false)
   const experimentsLoadedRef = useRef(false)
   const isLayoutingRef     = useRef(false)
+  const isCreatingNodeRef  = useRef(false)
 
   useEffect(() => { groupsRef.current = groups }, [groups])
   useEffect(() => { layoutDirRef.current = layoutDir }, [layoutDir])
@@ -224,6 +225,11 @@ export default function GraphView() {
   // ── 전체 실험 데이터 로드 ─────────────────────────────────────
   useEffect(() => {
     if (!isReady || experiments.length === 0) return
+    // 노드 직접 추가 직후 experiments 변경 → rebuildLayout 건너뜀
+    if (isCreatingNodeRef.current) {
+      isCreatingNodeRef.current = false
+      return
+    }
     Promise.all(experiments.map((e) => getExperiment(e.id).then((full) => full ?? e)))
       .then((fullList) => {
         const map = Object.fromEntries(fullList.map((e) => [e.id, e]))
@@ -406,7 +412,13 @@ export default function GraphView() {
           references: [],
         },
       }
+      isCreatingNodeRef.current = true
       const saved = await createExperiment(newExp)
+
+      // fullDataRef에 즉시 등록
+      fullDataRef.current[saved.id] = saved
+
+      // 선행 실험 followingExperiments 업데이트
       if (precedingId) {
         const precFull = fullDataRef.current[precedingId] ?? await getExperiment(precedingId)
         if (precFull) {
@@ -424,12 +436,31 @@ export default function GraphView() {
           }
         }
       }
-      navigate(`/experiments/${saved.id}`)
+
+      // 그래프에 즉시 노드 추가
+      const newRfNode = experimentsToNodes([saved]).map((n) => ({
+        ...n,
+        position,
+        data: { ...n.data, layoutDirection: layoutDirRef.current },
+      }))[0]
+      setNodes((prev) => annotateGroupMarkers([...prev, newRfNode]))
+
+      // 선행 엣지 추가
+      if (precedingId) {
+        setEdges((prev) => [...prev, {
+          id: `${precedingId}-${saved.id}`,
+          source: precedingId,
+          target: saved.id,
+          type: 'smoothstep',
+          markerEnd: { type: MarkerType.ArrowClosed },
+        }])
+      }
     } catch (err) {
+      isCreatingNodeRef.current = false
       console.error('새 실험 노트 생성 실패:', err)
       setToast({ message: err?.message ?? '새 실험 노트 생성에 실패했습니다.', type: 'error' })
     }
-  }, [experiments, createExperiment, getExperiment, updateExperiment, navigate])
+  }, [experiments, createExperiment, getExperiment, updateExperiment])
 
   // ── ReactFlow 이벤트 ──────────────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
