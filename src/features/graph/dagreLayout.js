@@ -4,7 +4,7 @@ export const NODE_WIDTH  = 180
 export const NODE_HEIGHT = 64
 
 const NODESEP = 60
-const RANKSEP = 100
+export const RANKSEP = 100
 
 export function applyDagreLayout(nodes, edges, direction = 'TB', groupNodeSets = []) {
   const g = new dagre.graphlib.Graph()

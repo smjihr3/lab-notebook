@@ -8,7 +8,7 @@ import ReactFlow, {
 } from 'reactflow'
 import { useExperiments } from '../../store/experimentStore'
 import { experimentsToNodes, experimentsToEdges, getNodeStyle } from './graphUtils'
-import { applyDagreLayout, NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
+import { applyDagreLayout, NODE_WIDTH, NODE_HEIGHT, RANKSEP } from './dagreLayout'
 import ExperimentNode from './ExperimentNode'
 import OutcomePopup from './OutcomePopup'
 import GraphContextMenu from './GraphContextMenu'
@@ -27,7 +27,7 @@ const nodeTypes = {
 
 export default function GraphView() {
   const navigate = useNavigate()
-  const { experiments, isReady, getExperiment, updateExperiment, createExperiment } = useExperiments()
+  const { experiments, isReady, getExperiment, updateExperiment, createExperiment, deleteExperiment } = useExperiments()
   const { groups, addGroup, updateGroup } = useGraphGroups()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
@@ -56,6 +56,18 @@ export default function GraphView() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isAddNodeMode])
 
+  const [isDeleteMode, setIsDeleteMode] = useState(false)
+  const [deleteConfirmPopup, setDeleteConfirmPopup] = useState(null) // { nodes: rfNode[] }
+
+  useEffect(() => {
+    if (!isDeleteMode) return
+    function onKeyDown(e) {
+      if (e.key === 'Escape') { setIsDeleteMode(false); setDeleteConfirmPopup(null) }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isDeleteMode])
+
   // ── 드래그 그룹 선택 상태 ────────────────────────────────────
   const [isSelectMode, setIsSelectMode]         = useState(false)
   const [selectedForGroup, setSelectedForGroup] = useState([])
@@ -73,6 +85,7 @@ export default function GraphView() {
   const experimentsLoadedRef = useRef(false)
   const isLayoutingRef     = useRef(false)
   const isCreatingNodeRef  = useRef(false)
+  const onDeleteRef        = useRef(null)
 
   useEffect(() => { groupsRef.current = groups }, [groups])
   useEffect(() => { layoutDirRef.current = layoutDir }, [layoutDir])
@@ -100,6 +113,7 @@ export default function GraphView() {
         ...n.data,
         isGroupStart: startIds.has(n.id),
         isGroupEnd:   endIds.has(n.id),
+        onDelete: (id) => onDeleteRef.current?.(id),
       },
     }))
   }
@@ -195,13 +209,20 @@ export default function GraphView() {
             }
           } else {
             // 단순 제외 → LR: 오른쪽, TB: 아래쪽
-            if (isLR) x = box.maxX + MARGIN
-            else      y = box.maxY + MARGIN
+            if (isLR) {
+              const parentNode = nodes.find((n) => n.id === parentIds[0])
+              x = parentNode ? parentNode.position.x + NODE_WIDTH + RANKSEP : box.maxX + MARGIN
+            } else {
+              const parentNode = nodes.find((n) => n.id === parentIds[0])
+              y = parentNode ? parentNode.position.y + NODE_HEIGHT + RANKSEP : box.maxY + MARGIN
+            }
           }
         } else if (isPreceder && !isFollower) {
           // N은 그룹의 선행 실험 → LR: 왼쪽, TB: 위쪽
-          if (isLR) x = box.minX - NODE_WIDTH - MARGIN
-          else      y = box.minY - NODE_HEIGHT - MARGIN
+          const childInGroupId = [...following].find((id) => box.ids.has(id))
+          const childNode = childInGroupId ? nodes.find((n) => n.id === childInGroupId) : null
+          if (isLR) x = childNode ? childNode.position.x - NODE_WIDTH - RANKSEP : box.minX - NODE_WIDTH - MARGIN
+          else      y = childNode ? childNode.position.y - NODE_HEIGHT - RANKSEP : box.minY - NODE_HEIGHT - MARGIN
         } else {
           // 연결 없거나 양방향 → 최소 이동 거리 fallback
           if (overlapX <= overlapY) {
@@ -318,16 +339,18 @@ export default function GraphView() {
 
   // ── 드래그 박스 선택 ──────────────────────────────────────────
   const onSelectionChange = useCallback(({ nodes: selNodes }) => {
-    if (!isSelectMode) return
-    latestSelectionRef.current = selNodes
-  }, [isSelectMode])
+    if (isSelectMode || isDeleteMode) latestSelectionRef.current = selNodes
+  }, [isSelectMode, isDeleteMode])
 
   function handleContainerMouseUp() {
-    if (!isSelectMode || groupCreatePopup) return
+    if (groupCreatePopup) return
     const sel = latestSelectionRef.current
-    if (sel.length > 0) {
+    if (isSelectMode && sel.length > 0) {
       setSelectedForGroup(sel)
       setGroupCreatePopup(true)
+    } else if (isDeleteMode && sel.length > 0) {
+      setDeleteConfirmPopup({ nodes: sel })
+      latestSelectionRef.current = []
     }
   }
 
@@ -550,18 +573,19 @@ export default function GraphView() {
     let terminalNodeIds = [...(group.terminalNodeIds ?? [])]
 
     if (startNodeIds.includes(experimentId)) {
-      if (followers.length > 0) {
-        for (const followerId of followers) {
-          if (!blockedEdges.some((e) => e.from === experimentId && e.to === followerId)) {
-            blockedEdges.push({ from: experimentId, to: followerId })
-          }
-        }
-      } else {
-        if (!terminalNodeIds.includes(experimentId)) {
-          terminalNodeIds.push(experimentId)
-        }
-      }
-      updateGroup(groupId, { blockedEdges, terminalNodeIds })
+      // X의 그룹 내 후속 노드들을 새 시작점으로 승격
+      const inGroupFollowers = followers.filter((id) => currentNodeIds.has(id))
+      const newStartNodeIds = [
+        ...startNodeIds.filter((id) => id !== experimentId),
+        ...inGroupFollowers.filter((id) => !startNodeIds.includes(id)),
+      ]
+      const newBlockedEdges = blockedEdges.filter((e) => e.from !== experimentId)
+      const newTerminalNodeIds = terminalNodeIds.filter((id) => id !== experimentId)
+      updateGroup(groupId, {
+        startNodeIds: newStartNodeIds,
+        blockedEdges: newBlockedEdges,
+        terminalNodeIds: newTerminalNodeIds,
+      })
       return
     }
 
@@ -579,6 +603,84 @@ export default function GraphView() {
     terminalNodeIds = terminalNodeIds.filter((id) => id !== experimentId)
 
     updateGroup(groupId, { blockedEdges, terminalNodeIds })
+  }
+
+  // ── 실험 노트 삭제 ─────────────────────────────────────────────
+  async function doDeleteExperiment(experimentId) {
+    const exp = fullDataRef.current[experimentId]
+    // 선행 실험의 followingExperiments에서 제거
+    for (const precId of exp?.connections?.precedingExperiments ?? []) {
+      const precFull = fullDataRef.current[precId]
+      if (!precFull) continue
+      const updated = {
+        ...precFull,
+        connections: {
+          ...(precFull.connections ?? {}),
+          followingExperiments: (precFull.connections?.followingExperiments ?? []).filter((id) => id !== experimentId),
+        },
+      }
+      fullDataRef.current[precId] = updated
+      await updateExperiment(updated)
+    }
+    // 후속 실험의 precedingExperiments에서 제거
+    for (const followId of exp?.connections?.followingExperiments ?? []) {
+      const followFull = fullDataRef.current[followId]
+      if (!followFull) continue
+      const updated = {
+        ...followFull,
+        connections: {
+          ...(followFull.connections ?? {}),
+          precedingExperiments: (followFull.connections?.precedingExperiments ?? []).filter((id) => id !== experimentId),
+        },
+      }
+      fullDataRef.current[followId] = updated
+      await updateExperiment(updated)
+    }
+    // 그룹에서 제거
+    for (const group of groupsRef.current) {
+      const inStart    = (group.startNodeIds    ?? []).includes(experimentId)
+      const inBlocked  = (group.blockedEdges    ?? []).some((e) => e.from === experimentId || e.to === experimentId)
+      const inTerminal = (group.terminalNodeIds ?? []).includes(experimentId)
+      if (inStart || inBlocked || inTerminal) {
+        updateGroup(group.id, {
+          startNodeIds:    (group.startNodeIds    ?? []).filter((id) => id !== experimentId),
+          blockedEdges:    (group.blockedEdges    ?? []).filter((e) => e.from !== experimentId && e.to !== experimentId),
+          terminalNodeIds: (group.terminalNodeIds ?? []).filter((id) => id !== experimentId),
+        })
+      }
+    }
+    delete fullDataRef.current[experimentId]
+    await deleteExperiment(experimentId)
+  }
+
+  async function handleDeleteNode(experimentId) {
+    const confirmed = window.confirm('이 실험 노트를 삭제하시겠습니까? 복구할 수 없습니다.')
+    if (!confirmed) return
+    try {
+      await doDeleteExperiment(experimentId)
+      setNodes((prev) => prev.filter((n) => n.id !== experimentId))
+      setEdges((prev) => prev.filter((e) => e.source !== experimentId && e.target !== experimentId))
+      if (selectedExp?.id === experimentId) setSelectedExp(null)
+    } catch (err) {
+      console.error('삭제 실패:', err)
+      setToast({ message: err?.message ?? '삭제에 실패했습니다.', type: 'error' })
+    }
+  }
+  onDeleteRef.current = handleDeleteNode
+
+  async function handleBulkDelete(experimentIds) {
+    const idSet = new Set(experimentIds)
+    try {
+      for (const id of experimentIds) {
+        await doDeleteExperiment(id)
+      }
+      setNodes((prev) => prev.filter((n) => !idSet.has(n.id)))
+      setEdges((prev) => prev.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)))
+      if (selectedExp && idSet.has(selectedExp.id)) setSelectedExp(null)
+    } catch (err) {
+      console.error('일괄 삭제 실패:', err)
+      setToast({ message: err?.message ?? '삭제에 실패했습니다.', type: 'error' })
+    }
   }
 
   // ── Outcome 선택 ──────────────────────────────────────────────
@@ -644,8 +746,8 @@ export default function GraphView() {
           onNodeDragStop={onNodeDragStop}
           onSelectionChange={onSelectionChange}
           onInit={(instance) => { rfInstanceRef.current = instance }}
-          selectionOnDrag={isSelectMode}
-          panOnDrag={!isSelectMode}
+          selectionOnDrag={isSelectMode || isDeleteMode}
+          panOnDrag={!isSelectMode && !isDeleteMode}
           fitView
           connectOnClick={false}
         >
@@ -711,6 +813,21 @@ export default function GraphView() {
         >
           {isSelectMode ? '선택 모드 ON' : '범위로 그룹 지정'}
         </button>
+        <button
+          onClick={() => {
+            const next = !isDeleteMode
+            setIsDeleteMode(next)
+            latestSelectionRef.current = []
+            if (!next) setDeleteConfirmPopup(null)
+          }}
+          className={`text-xs px-2.5 py-1 rounded-lg shadow border transition-colors ${
+            isDeleteMode
+              ? 'bg-red-500 text-white border-red-400 hover:bg-red-600'
+              : 'bg-white/90 hover:bg-white border-gray-200 text-gray-600'
+          }`}
+        >
+          {isDeleteMode ? '삭제 모드 ON' : '범위 삭제'}
+        </button>
       </div>
 
       {/* 드래그 선택 그룹 생성 팝업 */}
@@ -774,6 +891,46 @@ export default function GraphView() {
                   setIsSelectMode(false)
                   latestSelectionRef.current = []
                 }}
+                className="text-sm text-gray-400 hover:text-gray-600 px-2"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 범위 삭제 확인 모달 */}
+      {deleteConfirmPopup && (
+        <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+          <div
+            className="bg-white rounded-xl shadow-xl border border-gray-200 p-4 space-y-3 w-72 pointer-events-auto"
+            onMouseUp={(e) => e.stopPropagation()}
+          >
+            <div className="text-sm font-semibold text-gray-700">실험 노트 삭제</div>
+            <div className="text-xs text-gray-500">
+              {deleteConfirmPopup.nodes.length}개의 실험 노트를 삭제하시겠습니까?
+            </div>
+            <div className="text-xs text-gray-400 max-h-32 overflow-y-auto space-y-0.5">
+              {deleteConfirmPopup.nodes.map((n) => (
+                <div key={n.id} className="truncate">• {n.data.experiment?.title ?? n.id}</div>
+              ))}
+            </div>
+            <div className="text-xs text-red-500">삭제된 실험 노트는 복구할 수 없습니다.</div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={async () => {
+                  const ids = deleteConfirmPopup.nodes.map((n) => n.id)
+                  setDeleteConfirmPopup(null)
+                  setIsDeleteMode(false)
+                  await handleBulkDelete(ids)
+                }}
+                className="flex-1 text-sm bg-red-500 text-white rounded px-3 py-1.5 hover:bg-red-600"
+              >
+                삭제
+              </button>
+              <button
+                onClick={() => { setDeleteConfirmPopup(null); setIsDeleteMode(false) }}
                 className="text-sm text-gray-400 hover:text-gray-600 px-2"
               >
                 취소

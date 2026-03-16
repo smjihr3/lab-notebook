@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { Handle, Position } from 'reactflow'
 import { NODE_WIDTH, NODE_HEIGHT } from './dagreLayout'
 
 export default function ExperimentNode({ data, selected }) {
-  const { experiment, shortTitle, style, statusLabel, layoutDirection, isGroupStart, isGroupEnd } = data
+  const { experiment, shortTitle, style, statusLabel, layoutDirection, isGroupStart, isGroupEnd, onDelete } = data
   const { bg, border, text } = style
   const isLR = layoutDirection === 'LR'
+  const [hovered, setHovered] = useState(false)
 
   return (
     <>
@@ -29,7 +31,26 @@ export default function ExperimentNode({ data, selected }) {
           justifyContent: 'center',
           gap: 2,
         }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
+        {/* 삭제 버튼 */}
+        {hovered && onDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(experiment.id) }}
+            title="삭제"
+            style={{
+              position: 'absolute', top: 4, left: 6,
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: '#ef4444', fontSize: 16, lineHeight: 1, padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 18, height: 18,
+            }}
+          >
+            &times;
+          </button>
+        )}
+
         {/* 그룹 핀/플래그 아이콘 */}
         {(isGroupStart || isGroupEnd) && (
           <div style={{
