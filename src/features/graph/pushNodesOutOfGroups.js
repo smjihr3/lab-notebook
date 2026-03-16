@@ -64,9 +64,9 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
       let isBranch      = false
       let siblingsInGroup = []
       if (parentInGroup) {
-        siblingsInGroup = (expMap[parentInGroup]?.connections?.followingExperiments ?? [])
-          .filter((id) => groupNodeIds.has(id))
-        isBranch = siblingsInGroup.length >= 2
+        const allParentFollowers = expMap[parentInGroup]?.connections?.followingExperiments ?? []
+        siblingsInGroup = allParentFollowers.filter((id) => groupNodeIds.has(id))
+        isBranch = allParentFollowers.length >= 2
       }
 
       if (isLR) {
@@ -180,16 +180,19 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
       const followNode = nodeById[followId]
       if (!followNode) continue
 
-      const base = followNode.position
-      let nx = base.x, ny = base.y
+      const parentNewPos = updatedPositions.get(parentId)
+      if (!parentNewPos) continue
+      let nx, ny
       if (isLR) {
-        if      (cl === 'A') nx += GRID_SNAP_X
-        else if (cl === 'B') ny += GRID_SNAP_Y
-        else if (cl === 'C') nx -= GRID_SNAP_X
+        if      (cl === 'A') { nx = parentNewPos.x + GRID_SNAP_X; ny = parentNewPos.y }
+        else if (cl === 'B') { nx = parentNewPos.x;               ny = parentNewPos.y + GRID_SNAP_Y }
+        else if (cl === 'C') { nx = parentNewPos.x - GRID_SNAP_X; ny = parentNewPos.y }
+        else continue
       } else {
-        if      (cl === 'A') ny += GRID_SNAP_Y
-        else if (cl === 'B') nx += GRID_SNAP_X
-        else if (cl === 'C') ny -= GRID_SNAP_Y
+        if      (cl === 'A') { nx = parentNewPos.x;               ny = parentNewPos.y + GRID_SNAP_Y }
+        else if (cl === 'B') { nx = parentNewPos.x + GRID_SNAP_X; ny = parentNewPos.y }
+        else if (cl === 'C') { nx = parentNewPos.x;               ny = parentNewPos.y - GRID_SNAP_Y }
+        else continue
       }
 
       updatedPositions.set(followId, { x: nx, y: ny })
