@@ -371,6 +371,66 @@ export default function GraphView() {
     latestSelectionRef.current = []
   }
 
+  // ── 새 실험 노트 생성 ─────────────────────────────────────────
+  function generateExpId(expList) {
+    const now = new Date()
+    const prefix = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+    const nums = expList.map((e) => { const m = e.id.match(/^(?:exp_)?(\d{6})[_-](\d{3})$/); return m?.[1] === prefix ? parseInt(m[2], 10) : 0 }).filter(Boolean)
+    return `${prefix}-${String(nums.length > 0 ? Math.max(...nums) + 1 : 1).padStart(3, '0')}`
+  }
+
+  // position: { x, y } flow 좌표, precedingId: 선행 실험 id or null
+  const handleCreateAtPosition = useCallback(async (position, precedingId) => {
+    setIsAddNodeMode(false)
+    try {
+      const base = '새 실험 노트'
+      const titles = new Set(experiments.map((e) => e.title))
+      let title = base
+      if (titles.has(base)) { let n = 2; while (titles.has(`${base} (${n})`)) n++; title = `${base} (${n})` }
+      const newExp = {
+        id: generateExpId(experiments),
+        projectId: null,
+        title,
+        createdAt: new Date().toISOString(),
+        dataReceivedAt: null,
+        status: 'in_progress',
+        outcome: 'unknown',
+        goal: '',
+        tags: [],
+        procedure: { common: null, conditionTable: {}, observations: {} },
+        dataBlocks: [],
+        conclusion: null,
+        connections: {
+          precedingExperiments: precedingId ? [precedingId] : [],
+          followingExperiments: [],
+          references: [],
+        },
+      }
+      const saved = await createExperiment(newExp)
+      if (precedingId) {
+        const precFull = fullDataRef.current[precedingId] ?? await getExperiment(precedingId)
+        if (precFull) {
+          const prevFollowing = precFull.connections?.followingExperiments ?? []
+          if (!prevFollowing.includes(saved.id)) {
+            const updatedPrec = {
+              ...precFull,
+              connections: {
+                ...(precFull.connections ?? {}),
+                followingExperiments: [...prevFollowing, saved.id],
+              },
+            }
+            fullDataRef.current[precedingId] = updatedPrec
+            await updateExperiment(updatedPrec)
+          }
+        }
+      }
+      navigate(`/experiments/${saved.id}`)
+    } catch (err) {
+      console.error('새 실험 노트 생성 실패:', err)
+      setToast({ message: err?.message ?? '새 실험 노트 생성에 실패했습니다.', type: 'error' })
+    }
+  }, [experiments, createExperiment, getExperiment, updateExperiment, navigate])
+
   // ── ReactFlow 이벤트 ──────────────────────────────────────────
   const onNodeClick = useCallback((_, node) => {
     if (isAddNodeMode) {
@@ -530,65 +590,6 @@ export default function GraphView() {
     if (selectedExp?.id === experimentId) setSelectedExp(updated)
   }
 
-  // ── 새 실험 노트 생성 ─────────────────────────────────────────
-  function generateExpId(expList) {
-    const now = new Date()
-    const prefix = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-    const nums = expList.map((e) => { const m = e.id.match(/^(?:exp_)?(\d{6})[_-](\d{3})$/); return m?.[1] === prefix ? parseInt(m[2], 10) : 0 }).filter(Boolean)
-    return `${prefix}-${String(nums.length > 0 ? Math.max(...nums) + 1 : 1).padStart(3, '0')}`
-  }
-
-  // position: { x, y } flow 좌표, precedingId: 선행 실험 id or null
-  const handleCreateAtPosition = useCallback(async (position, precedingId) => {
-    setIsAddNodeMode(false)
-    try {
-      const base = '새 실험 노트'
-      const titles = new Set(experiments.map((e) => e.title))
-      let title = base
-      if (titles.has(base)) { let n = 2; while (titles.has(`${base} (${n})`)) n++; title = `${base} (${n})` }
-      const newExp = {
-        id: generateExpId(experiments),
-        projectId: null,
-        title,
-        createdAt: new Date().toISOString(),
-        dataReceivedAt: null,
-        status: 'in_progress',
-        outcome: 'unknown',
-        goal: '',
-        tags: [],
-        procedure: { common: null, conditionTable: {}, observations: {} },
-        dataBlocks: [],
-        conclusion: null,
-        connections: {
-          precedingExperiments: precedingId ? [precedingId] : [],
-          followingExperiments: [],
-          references: [],
-        },
-      }
-      const saved = await createExperiment(newExp)
-      if (precedingId) {
-        const precFull = fullDataRef.current[precedingId] ?? await getExperiment(precedingId)
-        if (precFull) {
-          const prevFollowing = precFull.connections?.followingExperiments ?? []
-          if (!prevFollowing.includes(saved.id)) {
-            const updatedPrec = {
-              ...precFull,
-              connections: {
-                ...(precFull.connections ?? {}),
-                followingExperiments: [...prevFollowing, saved.id],
-              },
-            }
-            fullDataRef.current[precedingId] = updatedPrec
-            await updateExperiment(updatedPrec)
-          }
-        }
-      }
-      navigate(`/experiments/${saved.id}`)
-    } catch (err) {
-      console.error('새 실험 노트 생성 실패:', err)
-      setToast({ message: err?.message ?? '새 실험 노트 생성에 실패했습니다.', type: 'error' })
-    }
-  }, [experiments, createExperiment, getExperiment, updateExperiment, navigate])
 
   // ── 렌더 ──────────────────────────────────────────────────────
   return (
