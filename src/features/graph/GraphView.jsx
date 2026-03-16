@@ -765,7 +765,8 @@ export default function GraphView() {
         const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
         const nodesAfterReshift = nodes.map((n) => { const p = reshiftMap.get(n.id); return p ? { ...n, position: p } : n })
         const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
-        const merged      = new Map([...reshiftMap, ...pushOutMap])
+        const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
+        const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
         if (merged.size > 0) {
           setNodes((prev) => prev.map((n) => {
             const pos = merged.get(n.id)
@@ -842,7 +843,8 @@ export default function GraphView() {
       const reshiftMap  = computeReshiftPositions(experimentId, updatedGroupNodeIds, nodes, fullList)
       const nodesAfterReshift = nodes.map((n) => { const p = reshiftMap.get(n.id); return p ? { ...n, position: p } : n })
       const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
-      const merged      = new Map([...reshiftMap, ...pushOutMap])
+      const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
+      const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
       if (merged.size > 0) {
         setNodes((prev) => prev.map((n) => {
           const pos = merged.get(n.id)
