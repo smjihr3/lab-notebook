@@ -46,6 +46,48 @@ export function migrateGroups(groups) {
   return groups.map(migrateGroup)
 }
 
+// ── 구형 endNodeIds → blockedEdges / terminalNodeIds 일괄 변환 ──
+/**
+ * groups 배열을 순회하며 endNodeIds 필드가 있는 그룹을
+ * blockedEdges / terminalNodeIds 기반 스키마로 변환.
+ * 변경 없는 그룹은 같은 객체 참조를 그대로 반환.
+ *
+ * @param {object[]} groups
+ * @param {object[]} experiments  followingExperiments 포함된 실험 배열
+ * @returns {object[]}
+ */
+export function migrateGroupEndNodes(groups, experiments) {
+  const experimentMap = Object.fromEntries(experiments.map((e) => [e.id, e]))
+  return groups.map((group) => {
+    if (!group.endNodeIds || group.endNodeIds.length === 0) return group
+
+    const newBlockedEdges    = [...(group.blockedEdges    ?? [])]
+    const newTerminalNodeIds = [...(group.terminalNodeIds ?? [])]
+    let changed = false
+
+    for (const endId of group.endNodeIds) {
+      const followers = experimentMap[endId]?.connections?.followingExperiments ?? []
+      if (followers.length > 0) {
+        for (const followerId of followers) {
+          if (!newBlockedEdges.some((e) => e.from === endId && e.to === followerId)) {
+            newBlockedEdges.push({ from: endId, to: followerId })
+            changed = true
+          }
+        }
+      } else {
+        if (!newTerminalNodeIds.includes(endId)) {
+          newTerminalNodeIds.push(endId)
+          changed = true
+        }
+      }
+    }
+
+    if (!changed) return group
+    const { endNodeIds: _removed, ...rest } = group
+    return { ...rest, blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds }
+  })
+}
+
 // ── 2단계 마이그레이션: 실험 데이터가 필요한 변환 ────────────
 /**
  * - 구형 endNodeIds → blockedEdges + terminalNodeIds 생성 (endNodeIds 유지)

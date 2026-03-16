@@ -18,7 +18,7 @@ import GroupOverlay from './GroupOverlay'
 import { useGraphGroups } from './GraphGroupProvider'
 import {
   resolveGroupNodeIds, generateGroupId, GROUP_COLORS,
-  migrateGroupData, isEndNode,
+  migrateGroupEndNodes, migrateGroupData, isEndNode,
 } from './graphGroups'
 
 const nodeTypes = {
@@ -310,10 +310,16 @@ export default function GraphView() {
         }
         fullDataRef.current = map
         // 구형 데이터 마이그레이션 (1회):
-        // endNodeIds → blockedEdges/terminalNodeIds, startNodeIds 선행 → openEdges
+        // 1단계: endNodeIds → blockedEdges/terminalNodeIds (migrateGroupEndNodes)
+        // 2단계: startNodeIds 선행 → openEdges, 나머지 필드 보정 (migrateGroupData)
         if (!migrationDoneRef.current) {
           migrationDoneRef.current = true
-          for (const group of groupsRef.current) {
+          const fullList = Object.values(map)
+          const stage1 = migrateGroupEndNodes(groupsRef.current, fullList)
+          stage1.forEach((g, i) => {
+            if (g !== groupsRef.current[i]) updateGroup(g.id, g)
+          })
+          for (const group of stage1) {
             const migrated = migrateGroupData(group, map)
             if (migrated) updateGroup(group.id, migrated)
           }
