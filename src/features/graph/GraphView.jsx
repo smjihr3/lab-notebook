@@ -1326,6 +1326,7 @@ export default function GraphView() {
               groupsRef.current = groupsRef.current.map((g) =>
                 g.id === groupId ? { ...mergedGroup, fixedNodePositions: newFixed } : g
               )
+              updateGroup(groupId, { fixedNodePositions: newFixed })
             }
             setTimeout(() => rebuildLayout(fullDataRef.current), 0)
           }}
