@@ -795,7 +795,7 @@ export default function GraphView() {
             if (!updatedGroupNodeIds.has(fid)) bfsQueue.push(fid)
           }
         }
-        const nodesForPushOut = nodesAfterReshift.filter((n) => !excludedSubtree.has(n.id))
+        const nodesForPushOut = nodesAfterReshift
         const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
         const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
         const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
