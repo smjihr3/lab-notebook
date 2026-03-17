@@ -289,10 +289,11 @@ export default function GraphView() {
 
   // ── 그룹 핀 정보 부여 ─────────────────────────────────────────
   function annotateGroupMarkers(nodeList) {
-    const startIds = new Set(groups.flatMap((g) => g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : [])))
+    const currentGroups = groupsRef.current
+    const startIds = new Set(currentGroups.flatMap((g) => g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : [])))
     const fullList = Object.values(fullDataRef.current)
     const endIds   = new Set()
-    for (const group of groups) {
+    for (const group of currentGroups) {
       const groupNodeIds = resolveGroupNodeIds(group, fullList)
       for (const id of group.endNodeIds ?? []) {
         if (isEndNode(id, group, groupNodeIds)) endIds.add(id)
