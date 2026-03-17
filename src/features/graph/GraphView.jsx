@@ -763,6 +763,7 @@ export default function GraphView() {
 
       const patch = { startNodeIds: newStartNodeIds, openEdges: newOpenEdges, blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
       updateGroup(groupId, patch)
+      console.log('[excludeFromGroup Case1] updateGroup 완료')
       {
         const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
         const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
@@ -854,6 +855,7 @@ export default function GraphView() {
 
     const patch = { blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
     updateGroup(groupId, patch)
+    console.log('[excludeFromGroup Case2] updateGroup 완료')
     {
       const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
       const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
