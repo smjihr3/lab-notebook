@@ -795,9 +795,8 @@ export default function GraphView() {
             if (!updatedGroupNodeIds.has(fid)) bfsQueue.push(fid)
           }
         }
-        const nodesForPushOut = nodesAfterReshift
-        const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
-        const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
+        const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
+        const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => excludedSubtree.has(id) && !reshiftMap.has(id)))
         const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
         if (merged.size > 0) {
           console.log('[excludeFromGroup Case1] setNodes 실행 - merged:', [...merged.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
@@ -890,9 +889,8 @@ export default function GraphView() {
           if (!updatedGroupNodeIds.has(fid)) bfsQueue.push(fid)
         }
       }
-      const nodesForPushOut = nodesAfterReshift.filter((n) => !excludedSubtree.has(n.id))
-      const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
-      const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
+      const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
+      const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => excludedSubtree.has(id) && !reshiftMap.has(id)))
       console.log('[structure] experimentId', experimentId)
       console.log('[structure] 전체 연결 구조', fullList.map(e => ({
         id: e.id,
