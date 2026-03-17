@@ -47,6 +47,7 @@ export default function GraphContextMenu({
 
   // ── 새 그룹의 시작점으로 지정 ─────────────────────────────────
   function handleAddGroup() {
+    console.log('[handleAddGroup] name:', newGroupName, 'experiment.id:', experiment.id)
     if (!newGroupName.trim()) return
     // 선행이 있으면 openEdges 생성
     const openEdges = predecessors.map((precId) => ({ from: precId, to: experiment.id }))
@@ -67,6 +68,7 @@ export default function GraphContextMenu({
   // followingExperiments 유무에 따라 blockedEdges / terminalNodeIds 분기
   // 설정 전 역방향 BFS로 경로 위의 기존 끝점 및 blockedEdges를 제거
   function handleSetEnd(groupId) {
+    console.log('[handleSetEnd] groupId:', groupId, 'experiment.id:', experiment.id, 'followers:', JSON.stringify(followers))
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
 
@@ -145,6 +147,7 @@ export default function GraphContextMenu({
 
   // ── 끝점 해제 ─────────────────────────────────────────────────
   function handleUnsetEnd(groupId) {
+    console.log('[handleUnsetEnd] groupId:', groupId, 'experiment.id:', experiment.id)
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
     updateGroup(groupId, {
@@ -157,6 +160,7 @@ export default function GraphContextMenu({
 
   // ── 시작점 추가 ───────────────────────────────────────────────
   function handleAddStart(groupId) {
+    console.log('[handleAddStart] groupId:', groupId, 'experiment.id:', experiment.id)
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
     const existing = getStartIds(g)
@@ -179,6 +183,7 @@ export default function GraphContextMenu({
 
   // ── 시작점 해제 ───────────────────────────────────────────────
   function handleUnsetStart(groupId) {
+    console.log('[handleUnsetStart] groupId:', groupId, 'experiment.id:', experiment.id)
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
     const newIds       = getStartIds(g).filter((id) => id !== experiment.id)

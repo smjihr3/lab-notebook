@@ -467,6 +467,7 @@ export default function GraphView() {
   }
 
   function handleGroupCreate() {
+    console.log('[handleGroupCreate] groupCreateTarget:', groupCreateTarget, 'selectedIds:', JSON.stringify(selectedForGroup.map(n => n.id)))
     const selectedIds = new Set(selectedForGroup.map((n) => n.id))
 
     const roots = selectedForGroup.filter((n) => {
@@ -1298,6 +1299,7 @@ export default function GraphView() {
           onExclude={handleExcludeFromGroup}
           onClose={() => setContextMenu(null)}
           onRebuild={() => {
+            console.log('[onRebuild] 호출됨, experiment.id:', contextMenu?.experiment?.id)
             const targetGroup = groupsRef.current.find((g) =>
               g.endNodeIds?.includes(contextMenu.experiment.id)
             )
