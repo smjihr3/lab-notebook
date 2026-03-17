@@ -516,6 +516,7 @@ export default function GraphView() {
       })
     } else {
       updateGroup(groupCreateTarget, { startNodeIds, endNodeIds, openEdges, blockedEdges, terminalNodeIds })
+      setTimeout(() => rebuildLayout(fullDataRef.current), 0)
     }
 
     setGroupCreatePopup(false)
@@ -847,6 +848,7 @@ export default function GraphView() {
       // X 이후 도달 가능 노드의 blockedEdges.from / terminalNodeIds 제거
       newBlockedEdges    = newBlockedEdges.filter((e) => !xReachable.has(e.from))
       newTerminalNodeIds = newTerminalNodeIds.filter((id) => !xReachable.has(id))
+      newEndNodeIds      = newEndNodeIds.filter((id) => !xReachable.has(id))
     } else {
       // 단일 경로 중간 노드: P를 새 끝점으로 자동 지정
       const pFollowers = expP?.connections?.followingExperiments ?? []
