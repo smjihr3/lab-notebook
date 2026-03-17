@@ -315,12 +315,11 @@ export default function GraphView() {
     if (fullList.length === 0) return
     const rawNodes = experimentsToNodes(fullList)
     const rawEdges = experimentsToEdges(fullList)
-    // groupsRef.current 대신 클로저의 groups 사용: useCallback([groups])이므로
-    // 항상 최신 그룹 상태를 반영. ref는 useEffect 후 갱신되므로 stale할 수 있음.
-    const groupNodeSets = groups.map((g) => resolveGroupNodeIds(g, fullList))
+    const currentGroups = groupsRef.current
+    const groupNodeSets = currentGroups.map((g) => resolveGroupNodeIds(g, fullList))
     isLayoutingRef.current = true
     const laidOut    = applyDagreLayout(rawNodes, rawEdges, groupNodeSets)
-    const pushedOut  = applyPushOut(laidOut, groups, fullDataMap)
+    const pushedOut  = applyPushOut(laidOut, currentGroups, fullDataMap)
     const annotated  = annotateGroupMarkers(pushedOut)
 
     setNodes(annotated)
@@ -328,8 +327,8 @@ export default function GraphView() {
     isLayoutingRef.current = false
 
     // applyDagreLayout 완료 직후 밀어내기 보정
-    pushNodesOutOfGroups(groups, annotated, fullList)
-  }, [groups])
+    pushNodesOutOfGroups(currentGroups, annotated, fullList)
+  }, [])
 
   // groups 변경 시 기존 노드에 핀 정보 재주입
   useEffect(() => {
