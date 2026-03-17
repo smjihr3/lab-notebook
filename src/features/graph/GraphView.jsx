@@ -736,6 +736,7 @@ export default function GraphView() {
   // ── 그룹에서 노드 제외 ────────────────────────────────────────
   function handleExcludeFromGroup(experimentId, groupId) {
     console.log('[excludeFromGroup] 시작 - experimentId:', experimentId, 'groupId:', groupId)
+    console.trace('[excludeFromGroup] 호출 스택')
     const group = groups.find((g) => g.id === groupId)
     if (!group) return
 
