@@ -88,22 +88,22 @@ describe('LR 모드 — 분기 후행(케이스 B) cascade', () => {
     expect(posB.y).toBe(248)
   })
 
-  it('D(B의 후행)가 cascade에 의해 B와 같은 방향(아래쪽)으로 이동함', () => {
+  it('D(B의 후행)가 cascade에 의해 케이스 A(오른쪽, 같은 y)로 이동함', () => {
     result = computePushOutPositions([group], nodes, experiments)
     const posD = result.get('D')
     expect(posD).toBeDefined()
-    // LR 케이스 B cascade: ny = B.newY + GRID_SNAP_Y = 248 + 124 = 372
-    expect(posD.y).toBe(248 + GRID_SNAP_Y)
-    // nx = B.newX = 280 (B와 같은 열 유지)
-    expect(posD.x).toBe(280)
+    // B의 그룹 밖 후행이 D 1개 → childCl='A' → nx = B.newX + GRID_SNAP_X = 280+280 = 560
+    expect(posD.x).toBe(280 + GRID_SNAP_X)
+    // ny = B.newY = 248 (같은 행 유지)
+    expect(posD.y).toBe(248)
   })
 
-  it('D가 B의 위치 기준으로 cascade 이동함 (B.x 동일, B.y 아래)', () => {
+  it('D가 B의 위치 기준으로 cascade 이동함 (B 오른쪽, 같은 y)', () => {
     result = computePushOutPositions([group], nodes, experiments)
     const posD = result.get('D')
-    // LR 케이스 B cascade: D는 B의 열(x=280)에 위치, B 아래 행(y=372)으로 이동
-    expect(posD.x).toBe(280)
-    expect(posD.y).toBe(372)
+    // 케이스 A cascade: D는 B 오른쪽(x=560), B와 같은 행(y=248)
+    expect(posD.x).toBe(560)
+    expect(posD.y).toBe(248)
   })
 })
 
@@ -129,9 +129,9 @@ describe('LR 모드 — 분기 후행(케이스 B) cascade', () => {
 //   newX = round(280/280)*280 = 280
 //   newY = ceil((312+24)/124)*124 = ceil(336/124)*124 = 3*124 = 372
 //
-// C (cascade from B, LR 케이스 B):
-//   nx = B.newX = 280
-//   ny = B.newY + GRID_SNAP_Y = 372 + 124 = 496
+// C (cascade from B, 케이스 A — B의 그룹 밖 후행 1개 → 일대일 → 케이스 A):
+//   nx = B.newX + GRID_SNAP_X = 280 + 280 = 560
+//   ny = B.newY = 372
 
 describe('LR 모드 — A→B→C / A→D→E 전체 그룹에서 B 제외', () => {
   const experiments2 = [
@@ -182,14 +182,14 @@ describe('LR 모드 — A→B→C / A→D→E 전체 그룹에서 B 제외', () 
     expect(posB.y).toBeGreaterThan(originalY)
   })
 
-  it('C(B의 후행)가 cascade로 B와 같은 방향(아래쪽)으로 이동함', () => {
+  it('C(B의 후행)가 cascade로 케이스 A(오른쪽, 같은 y)로 이동함', () => {
     const posB = result.get('B')
     const posC = result.get('C')
     expect(posC).toBeDefined()
-    // C.newX = B.newX (B와 같은 열 유지)
-    expect(posC.x).toBe(posB.x)
-    // C.newY = B.newY + GRID_SNAP_Y (B 아래 행)
-    expect(posC.y).toBe(posB.y + GRID_SNAP_Y)
+    // B의 그룹 밖 후행이 C 1개 → childCl='A' → C.newX = B.newX + GRID_SNAP_X
+    expect(posC.x).toBe(posB.x + GRID_SNAP_X)
+    // C.newY = B.newY (같은 행 유지)
+    expect(posC.y).toBe(posB.y)
   })
 
   it('C가 이동하지 않으면 실패', () => {

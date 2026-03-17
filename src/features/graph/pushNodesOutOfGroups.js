@@ -126,6 +126,8 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
     if (!cl || cl === 'D') continue
 
     const parentExp = expMap[parentId]
+    const parentFollowingOutOfGroup = (parentExp?.connections?.followingExperiments ?? [])
+      .filter((id) => !allGroupNodeIds.has(id))
     for (const followId of parentExp?.connections?.followingExperiments ?? []) {
       if (cascadeVisited.has(followId)) continue
       if (allGroupNodeIds.has(followId)) continue
@@ -136,14 +138,20 @@ export function computePushOutPositions(currentGroups, currentNodes, currentExpe
 
       const parentNewPos = updatedPositions.get(parentId)
       if (!parentNewPos) continue
+
+      // 자식 케이스 재판정:
+      // 부모의 그룹 밖 후행이 1개(일대일)이면 케이스 A(같은 행, 오른쪽)
+      // 2개 이상이면 케이스 B(같은 열, 아래)
+      const childCl = parentFollowingOutOfGroup.length >= 2 ? 'B' : 'A'
+
       let nx, ny
-      if      (cl === 'A') { nx = parentNewPos.x + GRID_SNAP_X; ny = parentNewPos.y }
-      else if (cl === 'B') { nx = parentNewPos.x;               ny = parentNewPos.y + GRID_SNAP_Y }
-      else if (cl === 'C') { nx = parentNewPos.x - GRID_SNAP_X; ny = parentNewPos.y }
+      if      (childCl === 'A') { nx = parentNewPos.x + GRID_SNAP_X; ny = parentNewPos.y }
+      else if (childCl === 'B') { nx = parentNewPos.x;               ny = parentNewPos.y + GRID_SNAP_Y }
+      else if (cl === 'C')      { nx = parentNewPos.x - GRID_SNAP_X; ny = parentNewPos.y }
       else continue
 
       updatedPositions.set(followId, { x: nx, y: ny })
-      caseMap.set(followId, cl)
+      caseMap.set(followId, childCl)
       cascadeQueue.push(followId)
     }
   }
