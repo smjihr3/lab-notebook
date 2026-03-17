@@ -519,7 +519,10 @@ export default function GraphView() {
       const targetGroup = groups.find((g) => g.id === groupCreateTarget)
       const prevFixed = { ...(targetGroup?.fixedNodePositions ?? {}) }
       for (const id of reincludedIds) { delete prevFixed[id] }
-      updateGroup(groupCreateTarget, { startNodeIds, endNodeIds, openEdges, blockedEdges, terminalNodeIds, fixedNodePositions: prevFixed })
+      const updatedGroup = { startNodeIds, endNodeIds, openEdges, blockedEdges, terminalNodeIds, fixedNodePositions: prevFixed }
+      updateGroup(groupCreateTarget, updatedGroup)
+      const updatedGroups = groups.map((g) => g.id === groupCreateTarget ? { ...g, ...updatedGroup } : g)
+      groupsRef.current = updatedGroups
       setTimeout(() => rebuildLayout(fullDataRef.current), 0)
     }
 
