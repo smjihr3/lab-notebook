@@ -777,7 +777,7 @@ export default function GraphView() {
       const newEndNodeIds = (group.endNodeIds ?? []).filter((id) => id !== experimentId)
 
       const patch = { startNodeIds: newStartNodeIds, openEdges: newOpenEdges, blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
-      updateGroup(groupId, patch)
+      // updateGroup은 merged 계산 후 fixedNodePositions와 함께 한 번만 호출한다
       console.log('[excludeFromGroup Case1] updateGroup 완료')
       {
         const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
@@ -799,15 +799,14 @@ export default function GraphView() {
         const pushOutMap  = computePushOutPositions(updatedGroups, nodesAfterReshift, fullList)
         const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => excludedSubtree.has(id) && !reshiftMap.has(id)))
         const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
+        const fixedNodePositions = { ...(group.fixedNodePositions ?? {}), ...Object.fromEntries(merged) }
+        updateGroup(groupId, { ...patch, fixedNodePositions })
         if (merged.size > 0) {
           console.log('[excludeFromGroup Case1] setNodes 실행 - merged:', [...merged.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
           setNodes((prev) => prev.map((n) => {
             const pos = merged.get(n.id)
             return pos ? { ...n, position: pos } : n
           }))
-          // fixedNodePositions 저장
-          const fixedPatch = { fixedNodePositions: { ...(group.fixedNodePositions ?? {}), ...Object.fromEntries(merged) } }
-          updateGroup(groupId, fixedPatch)
         }
       }
       return
@@ -873,7 +872,7 @@ export default function GraphView() {
     }
 
     const patch = { blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
-    updateGroup(groupId, patch)
+    // updateGroup은 merged 계산 후 fixedNodePositions와 함께 한 번만 호출한다
     console.log('[excludeFromGroup Case2] updateGroup 완료')
     console.log('[excludeFromGroup Case2] patch 적용값:', JSON.stringify(patch, null, 2))
     console.log('[excludeFromGroup Case2] 적용 후 group 전체:', JSON.stringify({ ...group, ...patch }, null, 2))
@@ -912,6 +911,8 @@ export default function GraphView() {
       console.log('[structure] filteredPushOutMap',
         [...filteredPushOutMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
       const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
+      const fixedNodePositions = { ...(group.fixedNodePositions ?? {}), ...Object.fromEntries(merged) }
+      updateGroup(groupId, { ...patch, fixedNodePositions })
       if (merged.size > 0) {
         console.log('[before move]', nodes
           .filter(n => n.type !== 'groupBackground')
@@ -926,9 +927,6 @@ export default function GraphView() {
             .map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
           return result
         })
-        // fixedNodePositions 저장
-        const fixedPatch = { fixedNodePositions: { ...(group.fixedNodePositions ?? {}), ...Object.fromEntries(merged) } }
-        updateGroup(groupId, fixedPatch)
       }
     }
   }
