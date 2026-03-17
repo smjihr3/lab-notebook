@@ -873,6 +873,8 @@ export default function GraphView() {
     const patch = { blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
     updateGroup(groupId, patch)
     console.log('[excludeFromGroup Case2] updateGroup 완료')
+    console.log('[excludeFromGroup Case2] patch 적용값:', JSON.stringify(patch, null, 2))
+    console.log('[excludeFromGroup Case2] 적용 후 group 전체:', JSON.stringify({ ...group, ...patch }, null, 2))
     {
       const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
       const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
