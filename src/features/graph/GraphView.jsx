@@ -322,8 +322,17 @@ export default function GraphView() {
     isLayoutingRef.current = true
     const laidOut    = applyDagreLayout(rawNodes, rawEdges, groupNodeSets)
     const pushedOut  = applyPushOut(laidOut, currentGroups, fullDataMap)
-    const annotated  = annotateGroupMarkers(pushedOut)
 
+    // fixedNodePositions 적용: 규칙이 정한 위치를 dagre 결과 위에 덮어씀
+    const allFixed = {}
+    for (const g of currentGroups) {
+      Object.assign(allFixed, g.fixedNodePositions ?? {})
+    }
+    const withFixed = pushedOut.map((n) =>
+      allFixed[n.id] ? { ...n, position: allFixed[n.id] } : n
+    )
+
+    const annotated  = annotateGroupMarkers(withFixed)
     console.log('[rebuildLayout] setNodes 실행 - 노드 위치:', annotated.map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
     setNodes(annotated)
     setEdges(rawEdges)
@@ -791,6 +800,9 @@ export default function GraphView() {
             const pos = merged.get(n.id)
             return pos ? { ...n, position: pos } : n
           }))
+          // fixedNodePositions 저장
+          const fixedPatch = { fixedNodePositions: { ...(group.fixedNodePositions ?? {}), ...Object.fromEntries(merged) } }
+          updateGroup(groupId, fixedPatch)
         }
       }
       return
@@ -906,6 +918,9 @@ export default function GraphView() {
             .map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
           return result
         })
+        // fixedNodePositions 저장
+        const fixedPatch = { fixedNodePositions: { ...(group.fixedNodePositions ?? {}), ...Object.fromEntries(merged) } }
+        updateGroup(groupId, fixedPatch)
       }
     }
   }

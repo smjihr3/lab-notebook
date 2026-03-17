@@ -26,6 +26,7 @@ export function migrateGroup(group) {
   if (!('openEdges' in g))       g.openEdges       = []
   if (!('blockedEdges' in g))    g.blockedEdges    = []
   if (!('terminalNodeIds' in g)) g.terminalNodeIds = []
+  if (!('fixedNodePositions' in g)) g.fixedNodePositions = {}
 
   if (!('endNodeIds' in g)) {
     // 구형 단일 endNodeId 또는 blockedEdges.from + terminalNodeIds에서 유도
