@@ -5,7 +5,7 @@ import { generateGroupId, GROUP_COLORS, resolveGroupNodeIds, isGroupEndpoint } f
 const MENU_WIDTH = 200
 
 export default function GraphContextMenu({
-  x, y, experiment, experiments, onOpen, onComplete, onChangeOutcome, onExclude, onClose,
+  x, y, experiment, experiments, onOpen, onComplete, onChangeOutcome, onExclude, onClose, onRebuild,
 }) {
   const menuRef = useRef(null)
   const { groups, addGroup, updateGroup, removeGroup } = useGraphGroups()
@@ -123,15 +123,22 @@ export default function GraphContextMenu({
           newEdges.push({ from: experiment.id, to: followerId })
         }
       }
-      updateGroup(groupId, { blockedEdges: newEdges, terminalNodeIds: filteredTerminalIds, endNodeIds: newEndIds })
+      const newFixed1 = { ...(g.fixedNodePositions ?? {}) }
+      delete newFixed1[experiment.id]
+      updateGroup(groupId, { blockedEdges: newEdges, terminalNodeIds: filteredTerminalIds, endNodeIds: newEndIds, fixedNodePositions: newFixed1 })
+      onRebuild?.()
     } else {
+      const newFixed2 = { ...(g.fixedNodePositions ?? {}) }
+      delete newFixed2[experiment.id]
       updateGroup(groupId, {
         blockedEdges:    filteredBlockedEdges,
         terminalNodeIds: filteredTerminalIds.includes(experiment.id)
           ? filteredTerminalIds
           : [...filteredTerminalIds, experiment.id],
         endNodeIds: newEndIds,
+        fixedNodePositions: newFixed2,
       })
+      onRebuild?.()
     }
     onClose()
   }

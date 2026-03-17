@@ -1297,6 +1297,19 @@ export default function GraphView() {
           onChangeOutcome={() => setOutcomePopup({ mode: 'change', experiment: contextMenu.experiment })}
           onExclude={handleExcludeFromGroup}
           onClose={() => setContextMenu(null)}
+          onRebuild={() => {
+            const targetGroup = groupsRef.current.find((g) =>
+              g.endNodeIds?.includes(contextMenu.experiment.id)
+            )
+            if (targetGroup) {
+              const newFixed = { ...(targetGroup.fixedNodePositions ?? {}) }
+              delete newFixed[contextMenu.experiment.id]
+              groupsRef.current = groupsRef.current.map((g) =>
+                g.id === targetGroup.id ? { ...g, fixedNodePositions: newFixed } : g
+              )
+            }
+            setTimeout(() => rebuildLayout(fullDataRef.current), 0)
+          }}
         />
       )}
 
