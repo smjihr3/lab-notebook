@@ -5,6 +5,7 @@ import { AuthProvider } from './store/authStore.jsx'
 import { DriveProvider } from './store/driveStore'
 import { ExperimentProvider } from './store/experimentStore'
 import { GraphGroupProvider } from './features/graph/GraphGroupProvider'
+import { GraphNodePositionProvider } from './features/graph/GraphNodePositionProvider'
 import './index.css'
 import 'reactflow/dist/style.css'
 import App from './App.jsx'
@@ -16,7 +17,9 @@ createRoot(document.getElementById('root')).render(
         <DriveProvider>
           <ExperimentProvider>
             <GraphGroupProvider>
-              <App />
+              <GraphNodePositionProvider>
+                <App />
+              </GraphNodePositionProvider>
             </GraphGroupProvider>
           </ExperimentProvider>
         </DriveProvider>
