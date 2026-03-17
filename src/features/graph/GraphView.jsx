@@ -1311,7 +1311,7 @@ export default function GraphView() {
               while (queue.length > 0) {
                 const cur = queue.shift()
                 for (const precId of expMap[cur]?.connections?.precedingExperiments ?? []) {
-                  if (!updatedGroupNodeIds.has(precId) && !toUnfix.has(precId)) {
+                  if (!toUnfix.has(precId) && newFixed[precId]) {
                     toUnfix.add(precId)
                     queue.push(precId)
                   }
