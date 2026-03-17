@@ -21,7 +21,6 @@ import {
   migrateGroupEndNodes, migrateGroupData, isEndNode,
 } from './graphGroups'
 import { computePushOutPositions } from './pushNodesOutOfGroups'
-import { useGraphNodePositions } from './GraphNodePositionProvider'
 
 const nodeTypes = {
   experimentNode: ExperimentNode,
@@ -216,7 +215,6 @@ export default function GraphView() {
   const navigate = useNavigate()
   const { experiments, isReady, getExperiment, updateExperiment, createExperiment, deleteExperiment } = useExperiments()
   const { groups, addGroup, updateGroup, removeGroup } = useGraphGroups()
-  const { nodePositions, savePositions } = useGraphNodePositions()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -273,19 +271,16 @@ export default function GraphView() {
   const [groupCreateTarget, setGroupCreateTarget] = useState('new') // 'new' | groupId
   const latestSelectionRef = useRef([])
 
-  const fullDataRef          = useRef({})
-  const rfInstanceRef        = useRef(null)
-  const groupsRef            = useRef(groups)
-  const migrationDoneRef     = useRef(false)
+  const fullDataRef        = useRef({})
+  const rfInstanceRef      = useRef(null)
+  const groupsRef          = useRef(groups)
+  const migrationDoneRef   = useRef(false)
   const experimentsLoadedRef = useRef(false)
-  const isLayoutingRef       = useRef(false)
-  const isCreatingNodeRef    = useRef(false)
-  const onDeleteRef          = useRef(null)
-  const nodePositionsRef     = useRef({})
-  const skipPositionSaveRef  = useRef(false)
+  const isLayoutingRef     = useRef(false)
+  const isCreatingNodeRef  = useRef(false)
+  const onDeleteRef        = useRef(null)
 
   useEffect(() => { groupsRef.current = groups }, [groups])
-  useEffect(() => { nodePositionsRef.current = nodePositions }, [nodePositions])
   // ── 그룹 노드 ID 맵 (GroupOverlay에 전달) ─────────────────────
   const groupNodeIdsMap = useMemo(() => {
     const fullList = Object.values(fullDataRef.current)
@@ -319,6 +314,7 @@ export default function GraphView() {
   const rebuildLayout = useCallback((fullDataMap) => {
     const fullList = Object.values(fullDataMap)
     if (fullList.length === 0) return
+    console.log('[rebuildLayout] 호출됨, experiments 수:', fullList.length)
     const rawNodes = experimentsToNodes(fullList)
     const rawEdges = experimentsToEdges(fullList)
     const currentGroups = groupsRef.current
@@ -328,38 +324,20 @@ export default function GraphView() {
     const pushedOut  = applyPushOut(laidOut, currentGroups, fullDataMap)
     const annotated  = annotateGroupMarkers(pushedOut)
 
-    const withSaved = annotated.map((n) => {
-      const saved = nodePositionsRef.current[n.id]
-      return saved ? { ...n, position: saved } : n
-    })
-    skipPositionSaveRef.current = true
-    setNodes(withSaved)
+    console.log('[rebuildLayout] setNodes 실행 - 노드 위치:', annotated.map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
+    setNodes(annotated)
     setEdges(rawEdges)
     isLayoutingRef.current = false
 
     // applyDagreLayout 완료 직후 밀어내기 보정
-    pushNodesOutOfGroups(currentGroups, withSaved, fullList)
+    pushNodesOutOfGroups(currentGroups, annotated, fullList)
   }, [])
 
   // groups 변경 시 기존 노드에 핀 정보 재주입
   useEffect(() => {
+    console.log('[useEffect groups] groups 변경 감지, annotateGroupMarkers 재실행')
     setNodes((prev) => annotateGroupMarkers(prev))
   }, [groups])
-
-  // ── 노드 위치 저장 ────────────────────────────────────────────
-  useEffect(() => {
-    if (skipPositionSaveRef.current) {
-      skipPositionSaveRef.current = false
-      return
-    }
-    if (nodes.length === 0) return
-    const posMap = new Map(
-      nodes
-        .filter((n) => n.type !== 'groupBackground')
-        .map((n) => [n.id, { x: n.position.x, y: n.position.y }])
-    )
-    savePositions(posMap)
-  }, [nodes])
 
   // ── 전체 실험 데이터 로드 ─────────────────────────────────────
   useEffect(() => {
@@ -369,6 +347,7 @@ export default function GraphView() {
       isCreatingNodeRef.current = false
       return
     }
+    console.log('[useEffect experiments] rebuildLayout 트리거 - experiments 수:', experiments.length)
     Promise.all(experiments.map((e) => getExperiment(e.id).then((full) => full ?? e)))
       .then((fullList) => {
         const map = Object.fromEntries(fullList.map((e) => [e.id, e]))
@@ -742,6 +721,7 @@ export default function GraphView() {
 
   // ── 그룹에서 노드 제외 ────────────────────────────────────────
   function handleExcludeFromGroup(experimentId, groupId) {
+    console.log('[excludeFromGroup] 시작 - experimentId:', experimentId, 'groupId:', groupId)
     const group = groups.find((g) => g.id === groupId)
     if (!group) return
 
@@ -783,6 +763,7 @@ export default function GraphView() {
 
       const patch = { startNodeIds: newStartNodeIds, openEdges: newOpenEdges, blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
       updateGroup(groupId, patch)
+      console.log('[excludeFromGroup Case1] updateGroup 완료')
       {
         const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
         const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
@@ -805,6 +786,7 @@ export default function GraphView() {
         const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
         const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
         if (merged.size > 0) {
+          console.log('[excludeFromGroup Case1] setNodes 실행 - merged:', [...merged.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
           setNodes((prev) => prev.map((n) => {
             const pos = merged.get(n.id)
             return pos ? { ...n, position: pos } : n
@@ -873,6 +855,7 @@ export default function GraphView() {
 
     const patch = { blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
     updateGroup(groupId, patch)
+    console.log('[excludeFromGroup Case2] updateGroup 완료')
     {
       const updatedGroups       = groups.map((g) => g.id === groupId ? { ...group, ...patch } : g)
       const updatedGroupNodeIds = resolveGroupNodeIds({ ...group, ...patch }, fullList)
@@ -892,12 +875,37 @@ export default function GraphView() {
       const nodesForPushOut = nodesAfterReshift
       const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
       const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
+      console.log('[structure] experimentId', experimentId)
+      console.log('[structure] 전체 연결 구조', fullList.map(e => ({
+        id: e.id,
+        preceding: e.connections?.precedingExperiments ?? [],
+        following: e.connections?.followingExperiments ?? []
+      })))
+      console.log('[structure] updatedGroupNodeIds', [...updatedGroupNodeIds])
+      console.log('[structure] excludedSubtree', [...excludedSubtree])
+      console.log('[structure] reshiftMap',
+        [...reshiftMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
+      console.log('[structure] nodesForPushOut ids',
+        nodesForPushOut.map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
+      console.log('[structure] pushOutMap',
+        [...pushOutMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
+      console.log('[structure] filteredPushOutMap',
+        [...filteredPushOutMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
       const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
       if (merged.size > 0) {
-        setNodes((prev) => prev.map((n) => {
-          const pos = merged.get(n.id)
-          return pos ? { ...n, position: pos } : n
-        }))
+        console.log('[before move]', nodes
+          .filter(n => n.type !== 'groupBackground')
+          .map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
+        setNodes((prev) => {
+          const result = prev.map((n) => {
+            const pos = merged.get(n.id)
+            return pos ? { ...n, position: pos } : n
+          })
+          console.log('[final positions]', result
+            .filter(n => n.type !== 'groupBackground')
+            .map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
+          return result
+        })
       }
     }
   }
