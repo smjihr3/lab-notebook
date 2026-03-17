@@ -1302,8 +1302,23 @@ export default function GraphView() {
               g.endNodeIds?.includes(contextMenu.experiment.id)
             )
             if (targetGroup) {
+              const fullList = Object.values(fullDataRef.current)
+              const updatedGroupNodeIds = resolveGroupNodeIds(targetGroup, fullList)
+              // 끝점 노드(experiment.id)에서 역방향 BFS로 그룹 밖 선행 노드 수집
+              const toUnfix = new Set([contextMenu.experiment.id])
+              const expMap = Object.fromEntries(fullList.map((e) => [e.id, e]))
+              const queue = [contextMenu.experiment.id]
+              while (queue.length > 0) {
+                const cur = queue.shift()
+                for (const precId of expMap[cur]?.connections?.precedingExperiments ?? []) {
+                  if (!updatedGroupNodeIds.has(precId) && !toUnfix.has(precId)) {
+                    toUnfix.add(precId)
+                    queue.push(precId)
+                  }
+                }
+              }
               const newFixed = { ...(targetGroup.fixedNodePositions ?? {}) }
-              delete newFixed[contextMenu.experiment.id]
+              for (const id of toUnfix) delete newFixed[id]
               groupsRef.current = groupsRef.current.map((g) =>
                 g.id === targetGroup.id ? { ...g, fixedNodePositions: newFixed } : g
               )
