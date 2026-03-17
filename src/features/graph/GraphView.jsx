@@ -1305,8 +1305,9 @@ export default function GraphView() {
               const mergedGroup = { ...targetGroup, ...updatedGroup }
               const fullList = Object.values(fullDataRef.current)
               const updatedGroupNodeIds = resolveGroupNodeIds(mergedGroup, fullList)
-              const toUnfix = new Set([contextMenu.experiment.id])
               const expMap = Object.fromEntries(fullList.map((e) => [e.id, e]))
+              const newFixed = { ...(mergedGroup.fixedNodePositions ?? {}) }
+              const toUnfix = new Set([contextMenu.experiment.id])
               const queue = [contextMenu.experiment.id]
               while (queue.length > 0) {
                 const cur = queue.shift()
@@ -1317,7 +1318,6 @@ export default function GraphView() {
                   }
                 }
               }
-              const newFixed = { ...(mergedGroup.fixedNodePositions ?? {}) }
               console.log('[onRebuild] mergedGroup.fixedNodePositions:', JSON.stringify(mergedGroup.fixedNodePositions))
               console.log('[onRebuild] updatedGroupNodeIds:', JSON.stringify([...updatedGroupNodeIds]))
               console.log('[onRebuild] toUnfix:', JSON.stringify([...toUnfix]))
