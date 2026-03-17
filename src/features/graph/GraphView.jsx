@@ -868,6 +868,7 @@ export default function GraphView() {
       // X 이후 도달 가능 노드의 blockedEdges.from / terminalNodeIds 제거
       newBlockedEdges    = newBlockedEdges.filter((e) => !xReachable.has(e.from))
       newTerminalNodeIds = newTerminalNodeIds.filter((id) => !xReachable.has(id))
+      newEndNodeIds      = newEndNodeIds.filter((id) => !xReachable.has(id))
     }
 
     const patch = { blockedEdges: newBlockedEdges, terminalNodeIds: newTerminalNodeIds, endNodeIds: newEndNodeIds }
