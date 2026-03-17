@@ -901,8 +901,8 @@ export default function GraphView() {
       console.log('[structure] excludedSubtree', [...excludedSubtree])
       console.log('[structure] reshiftMap',
         [...reshiftMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
-      console.log('[structure] nodesForPushOut ids',
-        nodesForPushOut.map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
+      console.log('[structure] nodesAfterReshift ids',
+        nodesAfterReshift.map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
       console.log('[structure] pushOutMap',
         [...pushOutMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
       console.log('[structure] filteredPushOutMap',
