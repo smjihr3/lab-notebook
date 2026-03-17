@@ -255,3 +255,65 @@ PXRD, IR, NMR, OM, SEM, Photo, BET (사용자 추가 가능)
 - 프린트 옵션: 상단만 / 하단만 / 전체 선택 가능
 - 구현 방식: CSS @media print (별도 라이브러리 불필요)
 - 각 섹션에 프린트용 CSS 클래스 미리 지정해둘 것
+
+---
+
+## 디버깅 워크플로우
+
+### Claude와의 협업 방식
+이 프로젝트는 코딩 비전문가인 연구자가 Claude(claude.ai)와 협력하여 개발함.
+Claude Code가 실제 코드 수정을 담당하고, claude.ai가 설계 판단과 지시문 작성을 담당함.
+
+### 버그 디버깅 절차
+1. claude.ai에 버그 상황과 의심 원인을 설명
+2. claude.ai가 관련 파일을 GitHub raw URL로 직접 읽고 분석
+3. claude.ai가 console.log 추가 지시문 작성 → Claude Code 실행 → git push
+4. 앱에서 문제 동작 재현 후 콘솔 로그를 claude.ai에 붙여넣기
+5. claude.ai가 로그 분석 후 수정 지시문 작성 → Claude Code 실행 → git push
+6. 수정 후 로그로 결과 재검증, 문제 해결까지 반복
+
+### GitHub 파일 읽기
+claude.ai는 아래 형식의 raw URL만 fetch 가능:
+https://raw.githubusercontent.com/smjihr3/lab-notebook/refs/heads/main/[파일경로]
+
+파일을 읽으려면 위 형식의 URL을 채팅창에 직접 붙여넣어야 함.
+github.com 페이지 URL은 fetch 불가.
+
+### 커밋 해시 관리
+중요한 수정 전에는 현재 커밋 해시를 기록해둘 것:
+  git log --oneline -3
+롤백이 필요하면:
+  git checkout [해시] -- [파일경로]
+
+### 그룹 스키마 설계 원칙
+연결 그래프의 그룹 기능은 아래 원칙으로 설계됨. 수정 시 반드시 숙지할 것.
+
+**스키마 필드 의미**
+- startNodeIds: BFS 시작점. 이 노드들부터 그룹 범위 탐색 시작
+- blockedEdges [{from, to}]: 후행이 있는 끝점 처리. 해당 엣지에서 BFS 중단
+- terminalNodeIds: 후행이 없는 끝점 처리. 해당 노드에서 BFS 중단. 나중에 후행이 추가돼도 차단 유지
+- openEdges [{from, to}]: 시작 노드에 선행이 있을 때 등록. 현재는 UI 메타데이터 용도
+- endNodeIds: UI 표시용 끝점 목록 (blockedEdges.from + terminalNodeIds)
+
+**resolveGroupNodeIds 동작**
+startNodeIds에서 BFS 시작 → blockedEdges로 경로 차단 → terminalNodeIds로 노드 차단
+→ 도달 가능한 노드 집합이 그룹 범위
+
+**handleExcludeFromGroup 동작**
+- Case 1 (시작 노드 제외): 후속 노드를 새 시작점으로 승격, X의 후행 엣지 차단
+- Case 2 (중간 노드 제외):
+  - 부모가 분기점(후행 2개 이상): P→X 엣지만 차단, 다른 분기 유지
+  - 부모가 단일 경로: P를 새 끝점으로 지정
+  - 양쪽 공통: reshift(형제 서브트리를 빈 슬롯으로 당김) + pushOut(제외 노드를 그룹 밖으로 이동) 를 merged Map으로 합산 후 setNodes 1회 호출
+
+**rebuildLayout 주의사항**
+rebuildLayout은 useCallback([])으로 선언되어야 함 (dependency 없음).
+groups를 클로저로 캡처하면 updateGroup 호출 시 rebuildLayout이 재생성되어
+useEffect([experiments, rebuildLayout])가 재실행되고 setNodes를 덮어씀.
+groups 참조는 반드시 groupsRef.current를 통해 접근할 것.
+annotateGroupMarkers도 동일하게 groupsRef.current를 사용해야 함.
+
+### computePushOutPositions vs applyPushOut
+- computePushOutPositions: 순수 함수. Map<nodeId, {x,y}> 반환만 함
+- applyPushOut / pushNodesOutOfGroups: setNodes를 실제 호출하는 래퍼
+- handleExcludeFromGroup에서는 setNodes를 1회만 호출하기 위해 compute 함수를 직접 사용하고 merged Map으로 합산
