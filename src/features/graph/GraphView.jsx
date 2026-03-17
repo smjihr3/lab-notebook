@@ -314,6 +314,7 @@ export default function GraphView() {
   const rebuildLayout = useCallback((fullDataMap) => {
     const fullList = Object.values(fullDataMap)
     if (fullList.length === 0) return
+    console.log('[rebuildLayout] 호출됨, experiments 수:', fullList.length)
     const rawNodes = experimentsToNodes(fullList)
     const rawEdges = experimentsToEdges(fullList)
     const currentGroups = groupsRef.current
@@ -323,6 +324,7 @@ export default function GraphView() {
     const pushedOut  = applyPushOut(laidOut, currentGroups, fullDataMap)
     const annotated  = annotateGroupMarkers(pushedOut)
 
+    console.log('[rebuildLayout] setNodes 실행 - 노드 위치:', annotated.map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
     setNodes(annotated)
     setEdges(rawEdges)
     isLayoutingRef.current = false
@@ -333,6 +335,7 @@ export default function GraphView() {
 
   // groups 변경 시 기존 노드에 핀 정보 재주입
   useEffect(() => {
+    console.log('[useEffect groups] groups 변경 감지, annotateGroupMarkers 재실행')
     setNodes((prev) => annotateGroupMarkers(prev))
   }, [groups])
 
@@ -344,6 +347,7 @@ export default function GraphView() {
       isCreatingNodeRef.current = false
       return
     }
+    console.log('[useEffect experiments] rebuildLayout 트리거 - experiments 수:', experiments.length)
     Promise.all(experiments.map((e) => getExperiment(e.id).then((full) => full ?? e)))
       .then((fullList) => {
         const map = Object.fromEntries(fullList.map((e) => [e.id, e]))
@@ -717,6 +721,7 @@ export default function GraphView() {
 
   // ── 그룹에서 노드 제외 ────────────────────────────────────────
   function handleExcludeFromGroup(experimentId, groupId) {
+    console.log('[excludeFromGroup] 시작 - experimentId:', experimentId, 'groupId:', groupId)
     const group = groups.find((g) => g.id === groupId)
     if (!group) return
 
@@ -780,6 +785,7 @@ export default function GraphView() {
         const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
         const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
         if (merged.size > 0) {
+          console.log('[excludeFromGroup Case1] setNodes 실행 - merged:', [...merged.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
           setNodes((prev) => prev.map((n) => {
             const pos = merged.get(n.id)
             return pos ? { ...n, position: pos } : n
