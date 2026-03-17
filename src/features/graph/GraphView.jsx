@@ -515,7 +515,11 @@ export default function GraphView() {
         terminalNodeIds,
       })
     } else {
-      updateGroup(groupCreateTarget, { startNodeIds, endNodeIds, openEdges, blockedEdges, terminalNodeIds })
+      const reincludedIds = selectedForGroup.map((n) => n.id)
+      const targetGroup = groups.find((g) => g.id === groupCreateTarget)
+      const prevFixed = { ...(targetGroup?.fixedNodePositions ?? {}) }
+      for (const id of reincludedIds) { delete prevFixed[id] }
+      updateGroup(groupCreateTarget, { startNodeIds, endNodeIds, openEdges, blockedEdges, terminalNodeIds, fixedNodePositions: prevFixed })
       setTimeout(() => rebuildLayout(fullDataRef.current), 0)
     }
 
@@ -791,7 +795,7 @@ export default function GraphView() {
             if (!updatedGroupNodeIds.has(fid)) bfsQueue.push(fid)
           }
         }
-        const nodesForPushOut = nodesAfterReshift
+        const nodesForPushOut = nodesAfterReshift.filter((n) => !excludedSubtree.has(n.id))
         const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
         const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
         const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
@@ -886,7 +890,7 @@ export default function GraphView() {
           if (!updatedGroupNodeIds.has(fid)) bfsQueue.push(fid)
         }
       }
-      const nodesForPushOut = nodesAfterReshift
+      const nodesForPushOut = nodesAfterReshift.filter((n) => !excludedSubtree.has(n.id))
       const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
       const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
       console.log('[structure] experimentId', experimentId)
