@@ -1318,7 +1318,11 @@ export default function GraphView() {
                 }
               }
               const newFixed = { ...(targetGroup.fixedNodePositions ?? {}) }
+              console.log('[onRebuild] targetGroup.fixedNodePositions:', JSON.stringify(targetGroup.fixedNodePositions))
+              console.log('[onRebuild] updatedGroupNodeIds:', [...updatedGroupNodeIds])
+              console.log('[onRebuild] toUnfix:', [...toUnfix])
               for (const id of toUnfix) delete newFixed[id]
+              console.log('[onRebuild] newFixed after delete:', JSON.stringify(newFixed))
               groupsRef.current = groupsRef.current.map((g) =>
                 g.id === targetGroup.id ? { ...g, fixedNodePositions: newFixed } : g
               )
