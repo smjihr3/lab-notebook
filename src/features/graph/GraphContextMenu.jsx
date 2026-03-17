@@ -65,7 +65,7 @@ export default function GraphContextMenu({
 
   // ── 끝점 지정 ─────────────────────────────────────────────────
   // followingExperiments 유무에 따라 blockedEdges / terminalNodeIds 분기
-  // 설정 전 역방향 BFS로 경로 위의 기존 blockedEdges를 제거
+  // 설정 전 역방향 BFS로 경로 위의 기존 끝점 및 blockedEdges를 제거
   function handleSetEnd(groupId) {
     const g = groups.find((g) => g.id === groupId)
     if (!g) return
@@ -73,8 +73,8 @@ export default function GraphContextMenu({
     const startIds = new Set(g.startNodeIds ?? (g.startNodeId ? [g.startNodeId] : []))
     const expMap   = Object.fromEntries((experiments ?? []).map((e) => [e.id, e]))
 
-    // 역방향 BFS: X에서 startNodeIds 방향으로 거슬러 올라가며
-    // 경로 위에 있는 blockedEdges를 수집하여 제거
+    // 역방향 BFS: E에서 startNodeIds 방향으로 거슬러 올라가며
+    // 경로 위의 blockedEdges 및 기존 endNodeIds 수집
     const visited       = new Set()
     const queue         = [experiment.id]
     const edgesToRemove = new Set()
@@ -95,12 +95,26 @@ export default function GraphContextMenu({
       }
     }
 
-    const filteredBlockedEdges = (g.blockedEdges ?? []).filter(
-      (e) => !edgesToRemove.has(`${e.from}→${e.to}`)
+    // 경로 위의 기존 끝점 수집 (E 자신 제외)
+    const endNodesToRemove = new Set(
+      [...visited].filter((id) => id !== experiment.id && (g.endNodeIds ?? []).includes(id))
     )
 
-    // endNodeIds에 추가
-    const newEndIds = [...new Set([...(g.endNodeIds ?? []), experiment.id])]
+    // blockedEdges: 경로상 edges 제거 + 기존 끝점의 from entries 제거
+    const filteredBlockedEdges = (g.blockedEdges ?? []).filter(
+      (e) => !edgesToRemove.has(`${e.from}→${e.to}`) && !endNodesToRemove.has(e.from)
+    )
+
+    // terminalNodeIds: 기존 끝점 제거
+    const filteredTerminalIds = (g.terminalNodeIds ?? []).filter(
+      (id) => !endNodesToRemove.has(id)
+    )
+
+    // endNodeIds: 기존 끝점 제거 후 E 추가
+    const newEndIds = [
+      ...(g.endNodeIds ?? []).filter((id) => !endNodesToRemove.has(id)),
+      experiment.id,
+    ].filter((id, i, arr) => arr.indexOf(id) === i)
 
     if (followers.length > 0) {
       const newEdges = [...filteredBlockedEdges]
@@ -109,12 +123,13 @@ export default function GraphContextMenu({
           newEdges.push({ from: experiment.id, to: followerId })
         }
       }
-      updateGroup(groupId, { blockedEdges: newEdges, endNodeIds: newEndIds })
+      updateGroup(groupId, { blockedEdges: newEdges, terminalNodeIds: filteredTerminalIds, endNodeIds: newEndIds })
     } else {
-      const existing = g.terminalNodeIds ?? []
       updateGroup(groupId, {
-        blockedEdges: filteredBlockedEdges,
-        terminalNodeIds: existing.includes(experiment.id) ? existing : [...existing, experiment.id],
+        blockedEdges:    filteredBlockedEdges,
+        terminalNodeIds: filteredTerminalIds.includes(experiment.id)
+          ? filteredTerminalIds
+          : [...filteredTerminalIds, experiment.id],
         endNodeIds: newEndIds,
       })
     }

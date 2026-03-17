@@ -4,7 +4,11 @@
       "Bash(cd:*)",
       "Bash(ls:*)",
       "Bash(for f:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npx vite:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(claude mcp:*)"
     ]
   }
 }

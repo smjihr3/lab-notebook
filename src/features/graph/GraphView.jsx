@@ -867,12 +867,37 @@ export default function GraphView() {
       const nodesForPushOut = nodesAfterReshift.filter((n) => !excludedSubtree.has(n.id))
       const pushOutMap  = computePushOutPositions(updatedGroups, nodesForPushOut, fullList)
       const filteredPushOutMap = new Map([...pushOutMap.entries()].filter(([id]) => !reshiftMap.has(id)))
+      console.log('[structure] experimentId', experimentId)
+      console.log('[structure] 전체 연결 구조', fullList.map(e => ({
+        id: e.id,
+        preceding: e.connections?.precedingExperiments ?? [],
+        following: e.connections?.followingExperiments ?? []
+      })))
+      console.log('[structure] updatedGroupNodeIds', [...updatedGroupNodeIds])
+      console.log('[structure] excludedSubtree', [...excludedSubtree])
+      console.log('[structure] reshiftMap',
+        [...reshiftMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
+      console.log('[structure] nodesForPushOut ids',
+        nodesForPushOut.map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
+      console.log('[structure] pushOutMap',
+        [...pushOutMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
+      console.log('[structure] filteredPushOutMap',
+        [...filteredPushOutMap.entries()].map(([id,pos]) => ({id, x:pos.x, y:pos.y})))
       const merged      = new Map([...reshiftMap, ...filteredPushOutMap])
       if (merged.size > 0) {
-        setNodes((prev) => prev.map((n) => {
-          const pos = merged.get(n.id)
-          return pos ? { ...n, position: pos } : n
-        }))
+        console.log('[before move]', nodes
+          .filter(n => n.type !== 'groupBackground')
+          .map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
+        setNodes((prev) => {
+          const result = prev.map((n) => {
+            const pos = merged.get(n.id)
+            return pos ? { ...n, position: pos } : n
+          })
+          console.log('[final positions]', result
+            .filter(n => n.type !== 'groupBackground')
+            .map(n => ({id: n.id, x: n.position.x, y: n.position.y})))
+          return result
+        })
       }
     }
   }
