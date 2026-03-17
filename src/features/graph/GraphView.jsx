@@ -1298,15 +1298,13 @@ export default function GraphView() {
           onChangeOutcome={() => setOutcomePopup({ mode: 'change', experiment: contextMenu.experiment })}
           onExclude={handleExcludeFromGroup}
           onClose={() => setContextMenu(null)}
-          onRebuild={() => {
-            console.log('[onRebuild] 호출됨, experiment.id:', contextMenu?.experiment?.id)
-            const targetGroup = groupsRef.current.find((g) =>
-              g.endNodeIds?.includes(contextMenu.experiment.id)
-            )
+          onRebuild={({ groupId, updatedGroup }) => {
+            console.log('[onRebuild] 호출됨, groupId:', groupId, 'updatedGroup:', JSON.stringify(updatedGroup))
+            const targetGroup = groupsRef.current.find((g) => g.id === groupId)
             if (targetGroup) {
+              const mergedGroup = { ...targetGroup, ...updatedGroup }
               const fullList = Object.values(fullDataRef.current)
-              const updatedGroupNodeIds = resolveGroupNodeIds(targetGroup, fullList)
-              // 끝점 노드(experiment.id)에서 역방향 BFS로 그룹 밖 선행 노드 수집
+              const updatedGroupNodeIds = resolveGroupNodeIds(mergedGroup, fullList)
               const toUnfix = new Set([contextMenu.experiment.id])
               const expMap = Object.fromEntries(fullList.map((e) => [e.id, e]))
               const queue = [contextMenu.experiment.id]
@@ -1319,14 +1317,14 @@ export default function GraphView() {
                   }
                 }
               }
-              const newFixed = { ...(targetGroup.fixedNodePositions ?? {}) }
-              console.log('[onRebuild] targetGroup.fixedNodePositions:', JSON.stringify(targetGroup.fixedNodePositions))
+              const newFixed = { ...(mergedGroup.fixedNodePositions ?? {}) }
+              console.log('[onRebuild] mergedGroup.fixedNodePositions:', JSON.stringify(mergedGroup.fixedNodePositions))
               console.log('[onRebuild] updatedGroupNodeIds:', JSON.stringify([...updatedGroupNodeIds]))
               console.log('[onRebuild] toUnfix:', JSON.stringify([...toUnfix]))
               for (const id of toUnfix) delete newFixed[id]
               console.log('[onRebuild] newFixed after delete:', JSON.stringify(newFixed))
               groupsRef.current = groupsRef.current.map((g) =>
-                g.id === targetGroup.id ? { ...g, fixedNodePositions: newFixed } : g
+                g.id === groupId ? { ...mergedGroup, fixedNodePositions: newFixed } : g
               )
             }
             setTimeout(() => rebuildLayout(fullDataRef.current), 0)

@@ -128,7 +128,7 @@ export default function GraphContextMenu({
       const newFixed1 = { ...(g.fixedNodePositions ?? {}) }
       delete newFixed1[experiment.id]
       updateGroup(groupId, { blockedEdges: newEdges, terminalNodeIds: filteredTerminalIds, endNodeIds: newEndIds, fixedNodePositions: newFixed1 })
-      onRebuild?.()
+      onRebuild?.({ groupId, updatedGroup: { blockedEdges: newEdges, terminalNodeIds: filteredTerminalIds, endNodeIds: newEndIds, fixedNodePositions: newFixed1 } })
     } else {
       const newFixed2 = { ...(g.fixedNodePositions ?? {}) }
       delete newFixed2[experiment.id]
@@ -140,7 +140,14 @@ export default function GraphContextMenu({
         endNodeIds: newEndIds,
         fixedNodePositions: newFixed2,
       })
-      onRebuild?.()
+      onRebuild?.({ groupId, updatedGroup: {
+        blockedEdges: filteredBlockedEdges,
+        terminalNodeIds: filteredTerminalIds.includes(experiment.id)
+          ? filteredTerminalIds
+          : [...filteredTerminalIds, experiment.id],
+        endNodeIds: newEndIds,
+        fixedNodePositions: newFixed2,
+      } })
     }
     onClose()
   }
